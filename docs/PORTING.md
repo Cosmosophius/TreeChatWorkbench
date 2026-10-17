@@ -119,3 +119,30 @@ M2 预备知识（给下个会话）：
 - **须知**：鼠标划选/键盘翻页的手动验证仍在等用户（截图环境无辅助功能授权，无法注入输入事件）；
   书架交互与视觉为桌面 v2 简化版（安卓 ShelfComponents 的卡片视觉 M5 对齐）；
   OCR 扫描盒（无文字层 PDF）在桌面 v1 显示图页但无选词（按 PORTING §1 规划 v2 评估）。
+
+### M3 数据层 + 工作台骨架（2026-10-17 晚，阶段一完成）
+
+- **数据层**：sqlite-jdbc 手写实现五个 DAO 全部契约（含 `getAncestorChain` 递归 CTE、
+  双协议投影 `NodeTitleHit/MessageContentHit/ConversationSummary`、Knowledge 批量/事务组合）。
+  表结构与安卓 v10 一致；桌面库从 v10 起步不跑迁移。
+  失效追踪用 `DbChanges.bump(mask)` 位掩码脉冲 + `observe()` 重读实现（对位 Room invalidation）。
+- **共享业务层全量编译**：ChatNodeViewModel / ChatMessageView / 探索页 / 导图 / 词典 / 笔记 /
+  设置 / 命令面板 / export(TalkTreeBundle, ZipExporter) ——共享源一行未改。
+  ReaderScreen(2115 行) + ShelfComponents(55KB 书架) + 五页签 ReaderSidePanel 也已收进来，
+  安卓 v1.41.24 的共享层增量（SourceMark 通道、词条 tags/levels、句对翻译 P5）合并后同步编入。
+- **充面层新增**：android.net.Uri／android.app.{Application,Activity}／androidx.lifecycle.AndroidViewModel、
+  android.database.Cursor、androidx.core.view.{WindowCompat,WindowInsets*}（沉浸退化 no-op）、
+  android.view.{View,Window}＋LocalView/LocalConfiguration 桌面版、android.graphics.BitmapFactory、
+  FileProvider/Intent 桥、ActivityResultContracts[]>(OpenDocument/OpenMultipleDocuments/PickMultipleVisualMedia)、
+  androidx.activity.compose.BackHandler。
+- **独立顶层小窗**（用户指令）：FloatingWindowManager API 不变，
+  SCREEN 空间小窗在 application 作用域逐个渲染为 Compose Desktop 独立 Window
+  （关闭/置顶直接映射 manager）。
+- **桌面 Speaker**（handoff 增量点 1）：`data.reader.Speech.kt` 共享侧排除，
+  `desktop` 侧同名 `Speaker`/`DesktopSpeaker`/`AndroidSpeaker`（say → espeak-ng → espeak，探测失败静默）。
+- **验证**：`:desktop:compileKotlin` 全绿；工作台实机截图（七模式药丸 Tab/新建会话 FAB/
+  provider 快击/设置入口）`screenshots/desktop-m3-workbench-shell-20261017.png`；
+  安卓双 flavor `--offline` 编译全绿。冒烟 `--appenv-smoke` 与 CLI `--open=` 阅读入口均可用。
+- **待办（M3 阶段二起）**：会话创建后的 ChatNodeViewModel 流接线实测（需真点击）；
+  对话气泡 P6；命令面板接 CommandPaletteDialog；句对翻译窗（SentenceTranslateSheet 已编译，入口接侧栏）；
+  linux-arm64 打包。

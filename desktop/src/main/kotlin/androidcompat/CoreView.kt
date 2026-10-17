@@ -8,7 +8,7 @@ object WindowCompat {
     fun getInsetsController(
         window: android.view.Window?,
         view: android.view.View?,
-    ): WindowInsetsController = WindowInsetsController()
+    ): WindowInsetsControllerCompat = WindowInsetsControllerCompat()
 
     @JvmStatic
     fun setDecorFitsSystemWindows(window: android.view.Window?, decorFitsSystemWindows: Boolean) {}
@@ -20,6 +20,11 @@ object WindowInsetsCompat {
         const val STATUS_BARS: Int = 2
         const val NAVIGATION_BARS: Int = 4
         const val IME: Int = 8
+
+        fun systemBars(): Int = SYSTEM_BARS
+        fun statusBars(): Int = STATUS_BARS
+        fun navigationBars(): Int = NAVIGATION_BARS
+        fun ime(): Int = IME
     }
 }
 

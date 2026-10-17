@@ -3,6 +3,7 @@
 @file:Suppress("unused", "MemberVisibilityCanBePrivate")
 package android.content
 
+import android.util.DesktopResources
 import com.treechat.desktop.DesktopAppEnvHolder
 import java.io.BufferedInputStream
 import java.io.File
@@ -31,6 +32,7 @@ open class Context internal constructor() {
     val cacheDir: File get() = File(filesDir, "cache")
     val packageName: String get() = "com.treechat.workbench"
     val contentResolver: ContentResolver get() = ContentResolver()
+    val resources: DesktopResources get() = DesktopResources
     val applicationContext: Context get() = this
     val assets: AssetManager get() = DesktopAssetManager
 

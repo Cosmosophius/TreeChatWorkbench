@@ -51,6 +51,7 @@ val m2SharedIncludes = listOf(
     "data/db/KnowledgeDao.kt",
     "data/db/WordDao.kt",
     "data/prefs/**",
+    "data/reader/**",
     "network/**",
     "util/**",
     "export/TalkTreeBundle.kt",
@@ -66,6 +67,7 @@ val platformBoundExcludes = listOf(
     "rag/ImagePicker.kt",
     "rag/PdfTextExtractor.kt",
     "etymology/engine/IpaAudioSynthesizer.kt",
+    "data/reader/Speech.kt",        // 桌面替身已接管（say / espeak-ng / espeak）
     "ocr/OcrEngine.kt",
     "ocr/PdfOcr.kt",
     "ocr/PdfPageSource.kt",

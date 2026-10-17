@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
+import com.treechat.workbench.data.model.ConversationNode
 import com.treechat.workbench.data.prefs.AppSettings
 import com.treechat.workbench.data.prefs.ProviderStore
 import com.treechat.workbench.ui.chat.ChatNodeViewModel

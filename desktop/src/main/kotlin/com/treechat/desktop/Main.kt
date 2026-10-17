@@ -1,9 +1,12 @@
-// M2 桌面阅读壳入口：挂充面层 → 启动书架/阅读窗口。
-// 保留 --appenv-smoke（无窗口冒烟，验证 AppEnv 全链路）。
+// M3 桌面工作台入口：挂充面层 → DesktopWorkbenchApp（主窗 + 独立顶层小窗）。
+// 保留 --appenv-smoke（无窗口冒烟）与 --open=<文件>（CLI 直开一本书，仍走 M2 阅读入口）。
 package com.treechat.desktop
 
 import androidx.compose.runtime.remember
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
 import com.treechat.workbench.data.prefs.AppSettings
 
 fun main(args: Array<String>) {
@@ -14,16 +17,33 @@ fun main(args: Array<String>) {
         return
     }
 
+    val readerPath = args.filter { it.startsWith("--open=") }
+        .map { java.io.File(it.removePrefix("--open=")) }
+        .lastOrNull { it.exists() }
+
     application {
-        val toOpen = args.filter { it.startsWith("--open=") }
-            .map { java.io.File(it.removePrefix("--open=")) }
-            .lastOrNull { it.exists() }
-        DesktopReaderHost(
-            settings = remember { AppSettings(DesktopAppEnvHolder.appContext) },
-            env = DesktopAppEnvHolder.env,
-            onCloseRequest = { exitApplication() },
-            initialOpen = toOpen,
-        )
+        if (readerPath != null) {
+            // 兼容 CLI 直开阅读的流程（M2 生活方式）
+            Window(
+                onCloseRequest = ::exitApplication,
+                state = rememberWindowState(width = 1280.dp, height = 830.dp),
+                title = "条畅",
+            ) {
+                val settings = remember { AppSettings(DesktopAppEnvHolder.appContext) }
+                DesktopReaderHost(
+                    settings = settings,
+                    env = DesktopAppEnvHolder.env,
+                    onCloseRequest = { exitApplication() },
+                    initialOpen = readerPath,
+                )
+            }
+        } else {
+            DesktopWorkbenchApp(
+                settings = remember { AppSettings(DesktopAppEnvHolder.appContext) },
+                env = DesktopAppEnvHolder.env,
+                onCloseRequest = { exitApplication() },
+            )
+        }
     }
 }
 
