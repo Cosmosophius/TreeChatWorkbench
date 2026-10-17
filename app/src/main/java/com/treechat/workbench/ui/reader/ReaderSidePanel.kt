@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -16,18 +17,24 @@ import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Notes
 import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.treechat.workbench.data.prefs.InkCardSnapshot
+import com.treechat.workbench.data.reader.AndroidSpeaker
+import com.treechat.workbench.etymology.data.GlossParser
 import com.treechat.workbench.etymology.data.VocabIndex
 import org.json.JSONArray
 
@@ -406,6 +413,19 @@ private fun VocabPane(
 }
 
 /** 「词条」页：选中词的离线释义；右上限点收藏。 */
+/**
+ * 「词条」页：结构化词条。
+ *
+ * ## 重设计（P1/P2，2026-10-17）
+ * 旧版把整串 gloss 一坨铺出来。现在：
+ *   · 词头行：词 + 音标 + **发音钮**（Speaker 接口，桌面端换实现不动 UI）+ 收藏星；
+ *   · 考纲 chips：每枚带**该考纲的星级**（vocab2 成对列，如"六级 ★5"）；
+ *   · **按词性分段的义项编号列表**（GlossParser，现成资产）；
+ *     点义项行 = 复制该义项（该行短暂变主色）；
+ *   · 「已收藏」chips 常驻顶部（P2：收藏不再失踪），点 chip 直达词条。
+ * 数据全部来自本地 tsv（考研词表 + ECDICT 核心），无网络、无 Room 变更。
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun EntryPane(
     state: ReaderPanelState,
@@ -413,7 +433,43 @@ private fun EntryPane(
     onFocused: (String?) -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
-    val entry = focusedWord?.let { VocabIndex.english(it) }
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val speaker = remember(context) { AndroidSpeaker(context) }
+    var copiedSense by remember { mutableStateOf<String?>(null) }
+
+    // ---- P2：收藏夹常驻（有收藏才显示）----
+    if (state.favoriteWords.isNotEmpty()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 10.dp, top = 8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Star,
+                contentDescription = null,
+                tint = scheme.primary,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "已收藏 ${state.favoriteWords.size}",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant
+            )
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+        ) {
+            state.favoriteWords.sorted().forEach { word ->
+                SuggestionChip(
+                    onClick = { onFocused(word) },
+                    label = { Text(word, fontSize = 12.sp) }
+                )
+            }
+        }
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+    }
 
     if (focusedWord == null) {
         Column(
@@ -427,26 +483,45 @@ private fun EntryPane(
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "查的是内置离线词库（考研词表 + ECDICT 常用词核心）。也可以在「生词」页点任意词跳到这里。",
+                text = "查的是内置离线词库（考研词表 + ECDICT 常用词核心）。也可以在「生词」页点任意词，或点上面的收藏 chip 跳到这里。",
                 style = MaterialTheme.typography.bodySmall,
                 color = scheme.outline
             )
         }
     } else {
+        val entry = VocabIndex.english(focusedWord)
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(10.dp)
         ) {
+            // ---- 词头行 ----
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = entry?.word ?: focusedWord,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = scheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = entry?.word ?: focusedWord,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = scheme.onSurface
+                    )
+                    Text(
+                        text = entry?.ipa?.ifBlank { null } ?: "（词库里没有音标）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.outline
+                    )
+                }
+                // 发音：Speaker 是平台接口，桌面换实现、UI 不动
+                IconButton(
+                    enabled = speaker.ready,
+                    onClick = { speaker.speak(focusedWord) }
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.VolumeUp,
+                        contentDescription = "读音",
+                        tint = scheme.primary
+                    )
+                }
                 IconButton(onClick = { state.toggleFavorite(focusedWord) }) {
                     Icon(
                         imageVector = if (state.isFavorite(focusedWord)) Icons.Outlined.Star else Icons.Outlined.StarBorder,
@@ -455,17 +530,81 @@ private fun EntryPane(
                     )
                 }
             }
-            Text(
-                text = entry?.ipa?.ifBlank { null } ?: "（词库里没有音标）",
-                style = MaterialTheme.typography.bodySmall,
-                color = scheme.outline
-            )
+
+            // ---- 考纲 chips（带星级）----
+            val tags = entry?.tags.orEmpty()
+            val levels = entry?.levels.orEmpty()
+            if (tags.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(top = 6.dp)
+                ) {
+                    VocabIndex.EXAM_CATEGORIES.filter { it.token in tags }.forEach { category ->
+                        val star = levels[category.token]
+                        SuggestionChip(
+                            onClick = {},
+                            label = {
+                                Text(
+                                    text = if (star != null) "${category.label} ★$star" else category.label,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = entry?.gloss?.ifBlank { null } ?: "未收录：这个词不在内置词库中。",
-                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-                color = if (entry?.gloss?.isBlank() == false) scheme.onSurface else scheme.onSurfaceVariant
-            )
+
+            // ---- 义项：按词性分段 + 编号；点行复制该义项 ----
+            val groups = remember(focusedWord, entry?.gloss) {
+                GlossParser.parse(entry?.gloss.orEmpty())
+            }
+            if (groups.isEmpty()) {
+                Text(
+                    text = "未收录：这个词不在内置词库中。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = scheme.onSurfaceVariant
+                )
+            } else {
+                groups.forEach { group ->
+                    val zh = GlossParser.posZh(group.pos)
+                    if (zh.isNotBlank()) {
+                        Text(
+                            text = zh,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = scheme.primary,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
+                        )
+                    }
+                    group.senses.forEachIndexed { i, sense ->
+                        Row(
+                            verticalAlignment = Alignment.Top,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    clipboard.setText(AnnotatedString(sense))
+                                    copiedSense = sense
+                                }
+                                .padding(vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "${i + 1}. ",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = scheme.outline
+                            )
+                            Text(
+                                text = sense,
+                                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                                color = if (copiedSense == sense) scheme.primary else scheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ---- 词形派生 ----
             val derived = VocabIndex.derivedForms(focusedWord)
             if (derived.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(10.dp))
@@ -481,6 +620,7 @@ private fun EntryPane(
                     color = scheme.onSurface
                 )
             }
+
             Spacer(modifier = Modifier.height(12.dp))
             TextButton(onClick = { onFocused(null) }) { Text("清除") }
         }

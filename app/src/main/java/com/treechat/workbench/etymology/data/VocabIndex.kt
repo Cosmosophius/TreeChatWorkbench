@@ -46,7 +46,13 @@ object VocabIndex {
          * —— 2026-10-17 用户明确：四级、考研、中考、高考类目**不需要**，
          * 本地块的 tsv 也确实不携带这些标签；阅读器的生词匹配按这份清单做。
          */
-        val tags: Set<String> = emptySet()
+        val tags: Set<String> = emptySet(),
+        /**
+         * 每个考纲 token 对应的**星级**（vocab2 第 5 列与第 4 列成对：
+         * `cet6,gre,ielts,toefl` + `5,3,3,3`，星级越高越常考）。
+         * 词条页的 chips 用它显示"六级 ★5"；匹配不用它。
+         */
+        val levels: Map<String, Int> = emptyMap()
     )
     data class RuEntry(val word: String, val gloss: String)
 
@@ -82,13 +88,19 @@ object VocabIndex {
                         // 考纲标签（col[3]，逗号分隔）与等级（col[4]）是阅读器
                         // 「生词匹配」的数据源，加载时顺手收下 —— 等级列
                         // 是"每个标签对应一个星"的成对串，这里只保 tags。
-                        val tags = if (col.size > 4) {
-                            col[3].split(',').map { it.trim().lowercase() }
-                                .filter { it.isNotEmpty() }.toSet()
+                        val tagTokens = col[3].split(',').map { it.trim().lowercase() }
+                            .filter { it.isNotEmpty() }
+                        val levels = if (col.size > 4) {
+                            val stars = col[4].split(',').mapNotNull { it.trim().toIntOrNull() }
+                            // 成对列可能长度不齐：按位置 zip，缺的丢（不猜）
+                            tagTokens.zip(stars) { t, lv -> t to lv }.toMap()
                         } else {
-                            emptySet()
+                            emptyMap()
                         }
-                        en[key] = EnEntry(col[0].trim(), col[1].trim(), gloss, tags = tags)
+                        en[key] = EnEntry(
+                            col[0].trim(), col[1].trim(), gloss,
+                            tags = tagTokens.toSet(), levels = levels
+                        )
                         indexGlossChars(gloss, key, charEn)
                     }
                 }
