@@ -57,6 +57,9 @@
 - 不动 androidx 之外的安卓发版细节；改共享文件前先确认 master 是否有未合并的发版改动。
 - 每阶段结束：`git commit`（消息 = 本阶段交接），必要时回写本文件。
 - 简体汉语界面、MD3 矢量、无 emoji 等全项目纪律不变。
+- 【2026-10-17 用户指令】**桌面版浮层小窗不沿用安卓的常驻覆盖层实现**，
+  要做成真正的独立顶层窗口（Compose Desktop 多 Window）。
+  `FloatingWindowManager` 的 API 形状保留对齐，渲染壳换成桌面 Window。
 
 ## 7. 执行记录
 
@@ -80,3 +83,39 @@ M2 预备知识（给下个会话）：
 - 桌面侧执行命令：`JAVA_HOME=tools/jdk21 ./gradlew :desktop:run --console=plain`
   （系统 JDK 26 仍会让 Gradle 报一行 `26`，同安卓线的坑）。
 - 冒烟入口：`:desktop:run --args="--appenv-smoke"`（无窗口，验证 AppEnv 全链路）。
+- CLI 直开一本书：`:desktop:run --args="--open=/path/to/book.epub"`。
+
+### M2 阅读（2026-10-17，已完成——窗口版）
+
+路线 B 完整落地的第一个功能里程碑。要点：
+
+- **共享源直编**：`:desktop` 的源集把 `app/src/main/java/com/treechat/workbench` 挂为 srcDir，
+  白名单收 `ui/selection`·`ui/markdown`·`ui/theme`·`ui/reader`·`etymology/data`·`data/{model,prefs}`
+  ·`network`·`rag`·`util`·`task`·`safety` 等包；`SelectionModel.kt` + `SelectableMarkdown`·`IncrementalMarkdown`
+  （选词/分词/高亮核心）、`AdaptiveDocumentView`（自适应分页+翻页动画+点击分区）等
+  共享源**一行未改**直接编译。
+- **充面层**（`desktop/src/main/kotlin/androidcompat/`）：`android.content.Context`
+  （SharedPreferences→Properties 落盘、assets→classpath、getSystemService）、`android.util.Log`、
+  `android.os.{SystemClock,Build}`、`android.graphics.{Bitmap,Typeface}`（+`FontFamily(typeface)` 桥、
+  `Bitmap.asImageBitmap()` 桥）、`android.content.{ClipboardManager,ClipData}`（AWT 剪贴板）、
+  `android.icu.text.BreakIterator`（委托 icu4j）、`androidx.compose.ui.platform.{LocalContext,LocalConfiguration}`
+  （桌面 CMP 1.6.11 无这些符号，实测 jar 零命中后纯增量声明）、`androidx.compose.material3.dynamic{Dark,Light}ColorScheme`
+  （Build 充面恒 30 走不到）、`androidx.compose.ui.res.painterResource(Int)`（占位 Painter，仅两处图标 5 冲）。
+- **桌面替身**（同包同名同 API 面）：`ocr/{PdfPageSource,OcrEngine,PdfOcr}`（PDFBox 2.0.27 渲染页 +
+  文字坐标词框登记；`writeString(String, List<TextPosition>)` 钩子逐词取盒，`PDFTextStripperByWord` 在
+  2.0.27 里不存在——实测）、`ui.reader.DocumentFileReader`（File 版导入，纯函数与安卓逐字同源）、
+  `rag.DocumentParser`（EPUB/DOCX/PPTX/MOBI/TXT 全保留，URI→字节入口）、`rag.PdfTextExtractor`、
+  `ui.reader.CoverExtractor`（含 `ReaderCoverPrefs`）、`rag.ImagePicker`（仅 splitDataUri）、`util.AppEdition`。
+- **排除未编**：`ui/reader/{ReaderScreen,ShelfComponents,SentenceTranslateSheet}`、`ui/browser/**`、
+  `ui/{explorer,tree,knowledge,dictionary,settings,notes,search,desktop,window}/**`、
+  `data/db/*Dao.kt|AppDatabase.kt|ConversationSearchRepository.kt`、`rag/KnowledgeRetriever.kt`、
+  `etymology/engine/IpaAudioSynthesizer.kt`——分别为 M3+ 或桌面 v2 独立重做。
+- **词库桥**：11 个 TSV 用 Copy 任务从 `app/src/main/assets` 桥进 desktop resources（不复制不进仓库）；
+  `VocabIndex.ensureLoaded(context)` 走充面 assets 直接可用。
+- **验证**：`:desktop:compileKotlin` BUILD SUCCESSFUL；`--appenv-smoke` 全链路通过；
+  实机窗口打开样例书（`--open=` CLI 入口），`AdaptiveDocumentView` 自适应分页/底栏页码/Aa 排版对话框/
+  生词侧栏标签（生词-词条-句法-AI）/翻页进度跨启动记忆 截图证据两份（screenshots/desktop-m2-*.png）。
+  安卓 `:app:compile{Full,Lite}ReleaseKotlin --offline` 全绿。
+- **须知**：鼠标划选/键盘翻页的手动验证仍在等用户（截图环境无辅助功能授权，无法注入输入事件）；
+  书架交互与视觉为桌面 v2 简化版（安卓 ShelfComponents 的卡片视觉 M5 对齐）；
+  OCR 扫描盒（无文字层 PDF）在桌面 v1 显示图页但无选词（按 PORTING §1 规划 v2 评估）。
