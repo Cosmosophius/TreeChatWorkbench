@@ -849,6 +849,14 @@ fun AdaptiveDocumentView(
                                     // 正常、纯文本异常：差异正出在这一行。
                                     quoteLinkTargets = quoteLinkTargets,
                                     onQuoteLinkClick = onQuoteLinkClick,
+                                    // ---- 生词/句法/查找/报文（此前错插进 OCR 卡的调用点，
+                                    // 正文卡一直没接到，玫红生词标记因此从未生效）----
+                                    activeExamTokens = activeExamTokens,
+                                    onPageText = onPageText,
+                                    toolState = sentenceTool,
+                                    onTranslateSentence = onTranslateSelection,
+                                    findQueryExternal = findQuery,
+                                    findHighlightIndex = findIndex,
                                     // 自适应分页：这一页该装多少字由实测视口算出（见 pageCapacity）。
                                     pageSize = pageCapacity,
                                     // 把正文段落区的实测宽高回上来，驱动下一次页容量计算。
@@ -1269,6 +1277,10 @@ private fun SingleDocumentPageCard(
     toolState: SentenceToolState? = null,
     /** 句法卡上的「翻译本段」。 */
     onTranslateSentence: (String) -> Unit = {},
+    /** 页内查找词（空 = 未查找），与自适应视图共用同一状态。 */
+    findQueryExternal: String = "",
+    /** 当前查找命中序号（0 基，容器负责环绕）。 */
+    findHighlightIndex: Int = 0,
     pageSize: Int = DocumentFileReader.CHARS_PER_PAGE,
     onViewportMeasured: (widthPx: Float, heightPx: Float) -> Unit = { _, _ -> },
     onSelectWord: (word: String, sentence: String, pos: Offset) -> Unit,
@@ -1289,6 +1301,42 @@ private fun SingleDocumentPageCard(
     }
     // 本页文本一变就上报：边栏据此算本页生词数与列表
     LaunchedEffect(realContent) { onPageText(realContent) }
+
+    // ---- P4 页内查找命中可视化与定位 ----
+    //
+    // 旧版只有"n/m 处"的计数，正文里命中词不上色也不跳 —— 用户根本找不到命中的位置。
+    // 现在：全部命中画琥珀底，**当前命中**画深琥珀；上一处/下一处时按命中在
+    // 全文中的比例滚动正文（等距近似的行级定位，对均匀正文足够准）。
+    val findOccurrences = remember(realContent, findQueryExternal) {
+        val q = findQueryExternal.trim()
+        if (q.isEmpty()) {
+            emptyList()
+        } else {
+            buildList {
+                var at = realContent.indexOf(q, 0, ignoreCase = true)
+                while (at >= 0) {
+                    add(at)
+                    at = realContent.indexOf(q, at + 1, ignoreCase = true)
+                }
+            }
+        }
+    }
+    val activeFind = findHighlightIndex.takeIf { it in findOccurrences.indices }
+    val findMarks = remember(findOccurrences, activeFind) {
+        findOccurrences.mapIndexed { i, at ->
+            com.treechat.workbench.ui.selection.SourceMark(
+                start = at,
+                endExclusive = at + findQueryExternal.trim().length,
+                color = if (i == activeFind) Color(0xFFFF9800) else Color(0xFFFFB74D)
+            )
+        }
+    }
+    LaunchedEffect(activeFind, findOccurrences.size) {
+        val at = activeFind ?: return@LaunchedEffect
+        if (realContent.isEmpty()) return@LaunchedEffect
+        val frac = findOccurrences[at].toFloat() / realContent.length
+        scrollState.animateScrollTo((frac * scrollState.maxValue).toInt())
+    }
 
     // 句法标注按用户要求**不画在原文页**上：结果统一进右侧边栏「句法」页签
     //（见 ReaderSidePanel.SyntaxPane）。本页基数只用于"本页文本上报"。
@@ -1385,11 +1433,21 @@ private fun SingleDocumentPageCard(
                     baseFontSize = typography.fontSizeSp.sp,
                     selectionColor = scheme.primary.copy(alpha = 0.28f),
                     contentPadding = PaddingValues(0.dp),
-                    vocabRanges = vocabHits.map { it.start until it.endExclusive },
-                    vocabColor = if (activeExamTokens.isEmpty()) {
-                        Color.Unspecified
-                    } else {
-                        Color(0xFFE57373)
+                    // 多色标记通道：生词（玫红）+ 页内查找命中（琥珀）+ 当前命中（深琥珀）
+                    sourceMarks = buildList {
+                        if (activeExamTokens.isNotEmpty()) {
+                            val rose = Color(0xFFE57373)
+                            vocabHits.forEach { hit ->
+                                add(
+                                    com.treechat.workbench.ui.selection.SourceMark(
+                                        start = hit.start,
+                                        endExclusive = hit.endExclusive,
+                                        color = rose
+                                    )
+                                )
+                            }
+                        }
+                        findMarks.forEach { add(it) }
                     },
                     onSelectionChanged = { hasSel ->
                         if (hasSel) {

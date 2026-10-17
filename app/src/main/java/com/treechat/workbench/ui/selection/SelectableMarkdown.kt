@@ -163,13 +163,12 @@ fun SelectableMarkdownText(
     /** 点击同文本超链接时的回调，参数为目标分支节点。 */
     onQuoteClick: (com.treechat.workbench.data.model.ConversationNode) -> Unit = {},
     /**
-     * 生词匹配区间（**整段 markdown 源坐标**）与其颜色。
+     * 多色源标记（**整段 markdown 源坐标**）。
      *
-     * 阅读器把考纲命中的整词区间传进来；组件按块投影后再叠样式
-     * （见 HighlightProjection.projectSourceRanges 与 toAnnotated 的同名参数）。
+     * 生词（玫红）/ 页内查找（琥珀）/ 当前查找命中（深琥珀）共用一条通道；
+     * 组件按色分组投影到块级再叠样式（HighlightProjection.projectSourceMarks）。
      */
-    vocabRanges: List<IntRange> = emptyList(),
-    vocabColor: Color = Color.Unspecified,
+    sourceMarks: List<com.treechat.workbench.ui.selection.SourceMark> = emptyList(),
     /**
      * 文本选择方案（设置 → 文本选择）。
      *
@@ -244,9 +243,9 @@ fun SelectableMarkdownText(
     val currentOnDiagnostic by rememberUpdatedState(onGestureDiagnostic)
     val currentOnQuoteClick by rememberUpdatedState(onQuoteClick)
 
-    // 生词区间：源坐标投影成块级（与高亮同规则），逐块分发
-    val projectedVocab = remember(blocks, vocabRanges) {
-        projectSourceRanges(blocks, vocabRanges)
+    // 多色标记：源坐标按色分组投影成块级（与高亮同规则），逐块分发
+    val projectedMarks = remember(blocks, sourceMarks) {
+        projectSourceMarks(blocks, sourceMarks)
     }
 
     // 为每个块预计算命中的同文本超链接列表
@@ -1219,7 +1218,10 @@ fun SelectableMarkdownText(
                     derivedStateOf { selectionRangeFor(controller, index, block) }
                 }.value
 
-            val blockVocab = projectedVocab.filter { it.blockIndex == index }.map { it.asIntRange }
+            val blockMarks = projectedMarks.mapNotNull { (global, color) ->
+                val local = global.filter { it.blockIndex == index }.map { it.asIntRange }
+                if (local.isEmpty()) null else local to color
+            }
 
                 SelectableBlock(
                     block = block,
@@ -1231,8 +1233,7 @@ fun SelectableMarkdownText(
                     selectionColor = selectionColor,
                     selectionRange = selectionRange,
                     quoteLinkRanges = linkRanges,
-                    vocabRanges = blockVocab,
-                    vocabColor = vocabColor,
+                    markGroups = blockMarks,
                     knownConcepts = knownConcepts,
                     rootCoordinates = rootCoordinates,
                     onCoordinates = { coords ->
@@ -1438,9 +1439,8 @@ private fun SelectableBlock(
     quoteLinkRanges: List<IntRange> = emptyList(),
     /** 命中本地词库的概念名集合，用于概念链接（`[[概念名]]`）的实线/弱化样式。 */
     knownConcepts: Set<String> = emptySet(),
-    /** 生词匹配区间（块内显示坐标）与颜色，见 toAnnotated 同名参数。 */
-    vocabRanges: List<IntRange> = emptyList(),
-    vocabColor: Color = Color.Unspecified,
+    /** 多色标记组（块内显示坐标区间 + 颜色），见 toAnnotated 同名参数。 */
+    markGroups: List<Pair<List<IntRange>, Color>> = emptyList(),
     // ---- 粗体呈现偏好（由调用方从 AppSettings 注入，见 SelectableMarkdownText 的同名注释）
     boldColorStyle: com.treechat.workbench.data.prefs.BoldColorStyle =
         com.treechat.workbench.data.prefs.BoldColorStyle.DEFAULT,
@@ -1555,8 +1555,7 @@ private fun SelectableBlock(
                         selectionColor = selectionColor,
                         quoteLinkRanges = quoteLinkRanges,
                         knownConcepts = knownConcepts,
-                        vocabRanges = vocabRanges,
-                        vocabColor = vocabColor
+                        markGroups = markGroups
                     ),
                     modifier = textPositionModifier,
                     fontSize = size,
@@ -1589,8 +1588,7 @@ private fun SelectableBlock(
                     selectionColor = selectionColor,
                     quoteLinkRanges = quoteLinkRanges,
                         knownConcepts = knownConcepts,
-                    vocabRanges = vocabRanges,
-                    vocabColor = vocabColor
+                    markGroups = markGroups
                 ),
                 modifier = textPositionModifier,
                 fontSize = baseFontSize * 0.97f,
@@ -1609,8 +1607,7 @@ private fun SelectableBlock(
                 selectionColor = selectionColor,
                 quoteLinkRanges = quoteLinkRanges,
                         knownConcepts = knownConcepts,
-                vocabRanges = vocabRanges,
-                vocabColor = vocabColor
+                markGroups = markGroups
             ),
             modifier = base.then(textPositionModifier),
             fontSize = baseFontSize,
@@ -1628,8 +1625,7 @@ private fun SelectableBlock(
                 selectionColor = selectionColor,
                 quoteLinkRanges = quoteLinkRanges,
                         knownConcepts = knownConcepts,
-                vocabRanges = vocabRanges,
-                vocabColor = vocabColor
+                markGroups = markGroups
             ),
             modifier = base.then(textPositionModifier),
             fontSize = baseFontSize,

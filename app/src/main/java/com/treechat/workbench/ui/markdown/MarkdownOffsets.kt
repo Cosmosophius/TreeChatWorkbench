@@ -735,8 +735,11 @@ fun MdRichBlock.toAnnotated(
      * HighlightProjection.projectSourceRanges）。渲染成"该色文字 + 下划线 +
      * 淡底"，与持久高亮（整块底色）区分开。
      */
-    vocabRanges: List<IntRange> = emptyList(),
-    vocabColor: Color = Color.Unspecified
+    /**
+     * 多色标记组：每组 = (块内显示坐标区间, 颜色)。
+     * 生词/页内查找/当前命中共用一条通道（见 HighlightProjection.projectSourceMarks）。
+     */
+    markGroups: List<Pair<List<IntRange>, Color>> = emptyList()
 ): AnnotatedString {
     return buildAnnotatedString {
         var cursor = 0
@@ -861,16 +864,18 @@ fun MdRichBlock.toAnnotated(
                     if (s < e) addStyle(SpanStyle(background = highlightColor), s, e)
                 }
             }
-            // 生词匹配：该色文字 + 下划线 + 淡底（压最上，读词优先级最高）
-            if (vocabColor != Color.Unspecified) {
-                vocabRanges.forEach { range ->
+            // 多色标记：色字 + 下划线 + 淡底（压最上）。同色一组，
+            // 组内区间互不重叠（投影层保证），组间按传入顺序叠加。
+            markGroups.forEach { (ranges, markColor) ->
+                if (markColor == Color.Unspecified) return@forEach
+                ranges.forEach { range ->
                     val s = maxOf(start, range.first)
                     val e = minOf(end, range.last + 1)
                     if (s < e) addStyle(
                         SpanStyle(
-                            color = vocabColor,
+                            color = markColor,
                             textDecoration = TextDecoration.Underline,
-                            background = vocabColor.copy(alpha = 0.10f)
+                            background = markColor.copy(alpha = 0.12f)
                         ),
                         s,
                         e

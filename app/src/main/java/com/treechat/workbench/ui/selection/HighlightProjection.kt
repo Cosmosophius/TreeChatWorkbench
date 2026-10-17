@@ -81,6 +81,35 @@ fun projectHighlights(
  * 而每块画的是剥掉行内标记后的显示串 —— 不投影直接加样式，距离哪怕差一个
  * `**`，下划线都会画到隔壁字上。
  */
+/**
+ * 源坐标上的一个**彩色标记**（生词玫红 / 页内查找琥珀 / 当前命中深琥珀……共用一条通道）。
+ */
+data class SourceMark(
+    val start: Int,
+    val endExclusive: Int,
+    val color: androidx.compose.ui.graphics.Color
+)
+
+/**
+ * 把 [SourceMark] 列表按颜色分组投影成"块级显示区间 + 颜色"。
+ *
+ * 渲染端（toAnnotated）按组叠样式：同色合并成一组，避免逐条 addStyle 的开销；
+ * 颜色不同的标记不会互相覆盖顺序错乱 —— 投影与正文高亮走同一套
+ * `block.toDisplay` 规则（见 projectSourceRanges 的说明）。
+ */
+fun projectSourceMarks(
+    blocks: List<MdRichBlock>,
+    marks: List<SourceMark>
+): List<Pair<List<HighlightRange>, androidx.compose.ui.graphics.Color>> {
+    if (marks.isEmpty() || blocks.isEmpty()) return emptyList()
+    return marks.groupBy { it.color }.map { (color, group) ->
+        projectSourceRanges(
+            blocks,
+            group.map { it.start until it.endExclusive }
+        ) to color
+    }.filter { (ranges, _) -> ranges.isNotEmpty() }
+}
+
 fun projectSourceRanges(
     blocks: List<MdRichBlock>,
     ranges: List<IntRange>
