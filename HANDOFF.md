@@ -281,3 +281,30 @@ toolState/...）曾整批错插进 **LiveTextPageCard** 的调用——两处调
 ### 4. 待办归属
 `docs/REDESIGN.md` 的 P6（对话气泡桌面快捷动作）留给下一批 ——
 对话层正被桌面 M2 触碰，本轮刻意避开。
+
+## 安卓线增量二（2026-10-17 深夜）：云盘 = 纯 SAF，OAuth 已拆除
+
+**v1.41.26（code 78）**。桌面会话注意三条：
+
+### 1. 云目录的唯一抽象：`data/reader/CloudFolderStore.kt`
+谷歌云盘走 **SAF 持久化目录授权**（用户在系统选择器里选一次 Drive 文件夹，
+`takePersistableUriPermission` 跨重启读写），**没有任何 OAuth/令牌/Client ID** ——
+`GoogleDriveClient`（OAuth 回环版）已存在过一版并**整体删除**，别复活它，也别把它移植到桌面。
+桌面端做法：实现同签名的 `CloudFolderStore` 桌面版（普通文件夹 + java.io.File，
+约 30 行：folderUri/setFolder/listChildren/findByName/putFile/readFile/delete），
+书架的云盘 UI（拖书上传 / 点开面板 / 导入书架 / 存文件 / 换文件夹）原样复用。
+
+### 2. 书架拖拽的三个模型坑（桌面端同样适用）
+- `ShelfEntry.document` 是 **KnowledgeDocument**（Room 检索侧，没有文件路径）；
+  原书文件在 `ReaderDocumentPool`（filesDir 副本，`ReaderDocument.filePath`）。
+  两者别混 —— 书架卡片操作原书时走 `localFileOf` 回调（外层用 pool 查）。
+- 本地函数不能先引用后声明：拖拽续传用「状态解耦」（`pendingUploads` +
+  `uploadResume` 标记 + `LaunchedEffect`），不要让 treePicker 回调直接调 uploadToDrive。
+- API 名是 `takePersistableUriPermission`（persist**able**），不是 Persisted。
+
+### 3. 书架交互现状
+拖书有**跟手幽灵**（半透明缩卡）；多选态右下角两个落点：废纸篓（删除）与
+云盘（上传/点击开面板）；多选工具条有「上传云盘」键。
+`ShelfBatchBar` 新增 `onUploadCloud`；`ShelfBookCard` 新增 `driveBounds`/`onDropToDrive`。
+
+待办不变：文件夹 tab 的对话树 .talktree 序列化（下一轮）、REDESIGN.md 的 P6。
