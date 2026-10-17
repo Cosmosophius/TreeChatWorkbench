@@ -18,9 +18,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -250,6 +255,8 @@ private fun DesktopMainScreen(
     onExitRequest: () -> Unit,
 ) {
     var viewMode by rememberSaveable { mutableStateOf(WorkbenchViewMode.CHAT_WORKSPACE) }
+    var showPalette by remember { mutableStateOf(false) }
+    var paletteQuery by remember { mutableStateOf<String?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showProviderMenu by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
@@ -324,8 +331,12 @@ private fun DesktopMainScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .onPreviewKeyEvent { event ->
-                    if (event.isCtrlPressed && event.key == Key.K && event.type == KeyEventType.KeyUp) {
-                        true // 命令面板在 M4 接 CommandPaletteDialog，这里先占住快捷键
+                    if (event.isCtrlPressed && event.type == KeyEventType.KeyUp) {
+                        when (event.key) {
+                            Key.K -> { showPalette = true; paletteQuery = null; true }
+                            Key.F -> { showPalette = true; paletteQuery = ""; true }
+                            else -> false
+                        }
                     } else {
                         false
                     }
@@ -407,7 +418,93 @@ private fun DesktopMainScreen(
             },
         )
     }
+
+    if (showPalette) {
+        com.treechat.workbench.ui.desktop.CommandPaletteDialog(
+            commands = desktopCommands(
+                viewModel = viewModel,
+                settings = settings,
+                switchTo = { viewMode = it; showPalette = false },
+                toast = { toast = it; showPalette = false },
+            ),
+            initialQuery = paletteQuery ?: "",
+            onQueryChange = { paletteQuery = it },
+            onDismiss = {
+                showPalette = false
+                paletteQuery = null
+            },
+        )
+    }
 }
+
+/** 工作台全局命令清单（Ctrl/Cmd+K / Ctrl/Cmd+F）。 */
+private fun desktopCommands(
+    viewModel: ChatNodeViewModel,
+    settings: AppSettings,
+    switchTo: (WorkbenchViewMode) -> Unit,
+    toast: (String) -> Unit,
+): List<com.treechat.workbench.ui.desktop.DesktopCommand> = listOf(
+    com.treechat.workbench.ui.desktop.DesktopCommand(
+        id = "mode.chat",
+        title = "去对话",
+        subtitle = "单会话线性对话",
+        category = "视图",
+        icon = Icons.AutoMirrored.Filled.Chat,
+        shortcutHint = null,
+        onExecute = { switchTo(WorkbenchViewMode.CHAT_WORKSPACE) },
+    ),
+    com.treechat.workbench.ui.desktop.DesktopCommand(
+        id = "mode.tree",
+        title = "去导图",
+        subtitle = "思维导图工作台",
+        category = "视图",
+        icon = Icons.Filled.AccountTree,
+        onExecute = { switchTo(WorkbenchViewMode.TOPOLOGY_TREE) },
+    ),
+    com.treechat.workbench.ui.desktop.DesktopCommand(
+        id = "mode.shelf",
+        title = "去书架",
+        subtitle = "导入、阅读与知识索引",
+        category = "视图",
+        icon = Icons.AutoMirrored.Filled.MenuBook,
+        onExecute = { switchTo(WorkbenchViewMode.SHELF) },
+    ),
+    com.treechat.workbench.ui.desktop.DesktopCommand(
+        id = "mode.explorer",
+        title = "去工作台",
+        subtitle = "文件夹 + 会话管理",
+        category = "视图",
+        icon = Icons.Filled.Folder,
+        onExecute = { switchTo(WorkbenchViewMode.EXPLORER) },
+    ),
+    com.treechat.workbench.ui.desktop.DesktopCommand(
+        id = "mode.dictionary",
+        title = "去词典",
+        subtitle = "三语查词与词源",
+        category = "视图",
+        icon = Icons.Outlined.Translate,
+        onExecute = { switchTo(WorkbenchViewMode.DICTIONARY) },
+    ),
+    com.treechat.workbench.ui.desktop.DesktopCommand(
+        id = "action.newConversation",
+        title = "新建对话",
+        subtitle = "在当前文件夹创建",
+        category = "动作",
+        icon = androidx.compose.material.icons.Icons.Filled.Add,
+        onExecute = {
+            viewModel.createConversation(folderId = null, title = "新对话")
+            toast("已创建新对话")
+        },
+    ),
+    com.treechat.workbench.ui.desktop.DesktopCommand(
+        id = "action.settings",
+        title = "设置",
+        subtitle = "模型 / 主题 / 输入方式",
+        category = "动作",
+        icon = androidx.compose.material.icons.Icons.Filled.Settings,
+        onExecute = { toast("请用右上角齿轮进入设置") },
+    ),
+)
 
 private fun openQuoteWindow(manager: FloatingWindowManager, node: ConversationNode, depth: Int) {
     val existing = manager.windows.firstOrNull { it.nodeId == node.id }
