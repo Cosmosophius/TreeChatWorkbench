@@ -238,3 +238,10 @@ cp app/build/outputs/apk/lite/release/app-lite-release.apk $OUT/talktree-lite-<�
 
 **待验证**：真机上划一段高亮后，是否只有那一段被点亮（本环境无设备）。
 
+
+## 多线协作（2026-10-17 起）
+
+- 仓库已 git 化：master = 安卓发版主线（本会话/发版会话用）；`desktop-port` = Linux ARM64 + macOS 移植分支（新会话用，开工即 `git checkout desktop-port`，避免与发版改动互踩）。
+- 版本口径：`versionName` 全平台同源共进，`versionCode` 仅安卓。桌面里程碑用 `1.4x.0-desktop.N` 预览尾缀，达到门槛并入正式号。
+- 交付目录：安卓仍进 workspace/release/（talktree-full/-lite-<ver>.apk）；桌面进 workspace/release/desktop/（talktree-<os>-arm64-<ver>.<ext>）。
+- 合并节奏：desktop-port 每完成一个稳定阶段回合并 master，合并必验：安卓双 flavor 编译 + 桌面目标编译。
