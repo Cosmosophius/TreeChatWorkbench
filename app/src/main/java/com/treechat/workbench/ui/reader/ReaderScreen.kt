@@ -173,7 +173,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.outlined.CloudUpload
-import com.treechat.workbench.data.reader.GoogleDriveClient
+import com.treechat.workbench.data.reader.CloudFolderStore
 import java.io.File
 import java.util.UUID
 
@@ -985,7 +985,7 @@ fun BookshelfScreen(
                     onSetEnabled = { entry, enabled ->
                         viewModel.setKnowledgeDocumentEnabled(entry.document.id, enabled)
                     },
-                    driveClient = remember { GoogleDriveClient(context) },
+                    cloudStore = remember { CloudFolderStore(context) },
                     onImportFromCloud = { f ->
                         coroutineScope.launch {
                         // 与"导入书籍"完全同一条管线（文件在本地缓存里，file:// 直接读）
@@ -1416,7 +1416,7 @@ private fun ShelfContent(
     pdfCoverEnabled: Boolean,
     onPdfCoverEnabledChange: (Boolean) -> Unit,
     // ---- 谷歌云盘（书架 Finder 式落点 + 云端面板）----
-    driveClient: GoogleDriveClient,
+    cloudStore: com.treechat.workbench.data.reader.CloudFolderStore,
     /** 云端文件下载完成后由宿主注册进书架（池 + Room，与导入书籍同一条管线）。 */
     onImportFromCloud: (File) -> Unit,
     /** 书架条目 → 本地原书文件（路径在 ReaderDocumentPool，只有外层拿得到）。 */
@@ -1626,25 +1626,34 @@ private fun ShelfContent(
         var trashBounds by remember { mutableStateOf<Rect?>(null) }
         var trashDragPos by remember { mutableStateOf<Offset?>(null) }
 
-        // ---- 谷歌云盘（Finder 式第二落点：拖入即上传；点击打开云端面板）----
-        val driveClient = remember { GoogleDriveClient(context) }
-        var driveBounds by remember { mutableStateOf<Rect?>(null) }
-        // 拖拽幽灵：拖动中的书跟手（书架自由摆放画布只挪落点，视觉必须由外层补）
-        var draggedEntry by remember { mutableStateOf<ShelfEntry?>(null) }
-        // 云端面板与登录
-        var drivePanelOpen by remember { mutableStateOf(false) }
-        var driveLoginOpen by remember { mutableStateOf(false) }
-        var pendingUploads by remember { mutableStateOf<List<ShelfEntry>?>(null) }
+        // ---- 云盘（SAF 目录制：拖入即写入；点击打开云端面板）----
+        // 用户在系统选择器里选一次云端文件夹（持久权限），此后一切直读直写。
+        // 不用 OAuth：Drive 的提供方已由用户登录激活（SAF 可见）。
+        // cloudStore 由外层注入（同一实例）：避免两个 store 各持一份 prefs 视图
+        var cloudHasFolder by remember { mutableStateOf(cloudStore.hasFolder()) }
 
-        fun selectedEntries(): List<ShelfEntry> =
-            entries.filter { selectedDocIds.containsKey(it.document.id) }
+        // 选目录的启动器（首次/换目录）：授权回来继续挂起的上传
+        var pendingUploads by remember { mutableStateOf<List<ShelfEntry>?>(null) }
+        var uploadResume by remember { mutableStateOf(false) }
+        val treePicker = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocumentTree()
+        ) { treeUri ->
+            if (treeUri != null) {
+                cloudStore.setFolder(treeUri)
+                cloudHasFolder = true
+                uploadResume = true
+            }
+        }
+        var driveBounds by remember { mutableStateOf<Rect?>(null) }
 
         fun uploadToDrive(list: List<ShelfEntry>) {
             val targets: List<ShelfEntry> = if (list.isEmpty()) return else list
-            if (!driveClient.isConfigured() || !driveClient.isAuthorized()) {
-                // 没登录：先记下要传的书，登录成功自动续传
+            if (!cloudHasFolder) {
+                // 首次：选一次云端文件夹（系统选择器里点你的谷歌硬盘）。
+                // 选完由 resumeUpload 的 LaunchedEffect 续传 —— 本地函数与
+                // 启动器互相引用解不开，用状态解耦。
                 pendingUploads = targets
-                driveLoginOpen = true
+                treePicker.launch(null)
                 return
             }
             coroutineScope.launch {
@@ -1655,7 +1664,9 @@ private fun ShelfContent(
                             // 原书文件在 ReaderDocumentPool（filesDir 副本）；
                             // KnowledgeDocument 上没有路径 —— 别搞混这两个模型。
                             val f = localFileOf(entry)
-                            if (f != null && f.exists()) driveClient.uploadFile(f.name, f)
+                            if (f != null && f.exists()) {
+                                cloudStore.putFile(f.name, guessCloudMime(f.name), f.readBytes())
+                            }
                         }
                     }
                     snackbarHostState.showSnackbar("已上传 ${targets.size} 本到云盘「条畅」文件夹")
@@ -1664,80 +1675,40 @@ private fun ShelfContent(
                 }
             }
         }
+        // 拖拽幽灵：拖动中的书跟手（书架自由摆放画布只挪落点，视觉必须由外层补）
+        var draggedEntry by remember { mutableStateOf<ShelfEntry?>(null) }
+        // 云端面板与登录
+        var drivePanelOpen by remember { mutableStateOf(false) }
+
+        fun selectedEntries(): List<ShelfEntry> =
+            entries.filter { selectedDocIds.containsKey(it.document.id) }
 
 
-        // ---- 登录对话框：粘贴 Client ID → 浏览器授权（回环）→ 自动续传挂起任务 ----
-        if (driveLoginOpen) {
-            var clientIdInput by remember { mutableStateOf(driveClient.let { "" }) }
-            var busy by remember { mutableStateOf(false) }
-            var errMsg by remember { mutableStateOf<String?>(null) }
-            AlertDialog(
-                onDismissRequest = { if (!busy) driveLoginOpen = false },
-                title = { Text("连接谷歌云盘", fontWeight = FontWeight.Bold) },
-                text = {
-                    Column {
-                        Text(
-                            "一次性的准备：在 Google Cloud Console 建「Android 类型」OAuth 客户端" +
-                                "（包名 com.treechat.workbench），把 Client ID 粘到这里。授权范围只有" +
-                                "「本应用创建的文件」，你的其它网盘内容软件看不见。"
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = clientIdInput,
-                            onValueChange = { clientIdInput = it },
-                            singleLine = true,
-                            placeholder = { Text("xxxxxxxx.apps.googleusercontent.com") },
-                            textStyle = MaterialTheme.typography.bodySmall
-                        )
-                        errMsg?.let {
-                            Text(it, color = scheme.error, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        enabled = !busy && clientIdInput.isNotBlank(),
-                        onClick = {
-                            busy = true
-                            driveClient.saveClientId(clientIdInput)
-                            coroutineScope.launch {
-                                val err = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                    runCatching { driveClient.authorize() }
-                                        .exceptionOrNull()?.message
-                                }
-                                busy = false
-                                if (err == null && driveClient.isAuthorized()) {
-                                    driveLoginOpen = false
-                                    pendingUploads?.let { list ->
-                                        pendingUploads = null
-                                        uploadToDrive(list)
-                                    }
-                                } else {
-                                    errMsg = err ?: "授权未完成"
-                                }
-                            }
-                        }
-                    ) { Text(if (busy) "跳转浏览器…" else "登录") }
-                },
-                dismissButton = {
-                    TextButton(enabled = !busy, onClick = { driveLoginOpen = false }) { Text("取消") }
+
+        // 选完文件夹后的自动续传（绕开本地函数循环引用）
+        LaunchedEffect(uploadResume) {
+            if (uploadResume) {
+                uploadResume = false
+                pendingUploads?.let { list ->
+                    pendingUploads = null
+                    uploadToDrive(list)
                 }
-            )
+            }
         }
 
         // ---- 云端面板：文件列表（"条畅"文件夹）+ 下载到本地 Download ----
         if (drivePanelOpen) {
-            var listing by remember { mutableStateOf<List<GoogleDriveClient.CloudFile>?>(null) }
+            var listing by remember { mutableStateOf<List<com.treechat.workbench.data.reader.CloudFolderStore.CloudItem>?>(null) }
             var loadErr by remember { mutableStateOf<String?>(null) }
-            LaunchedEffect(Unit) {
-                if (!driveClient.isConfigured() || !driveClient.isAuthorized()) {
-                    drivePanelOpen = false
-                    driveLoginOpen = true
+            LaunchedEffect(Unit, cloudHasFolder) {
+                if (!cloudHasFolder) {
+                    listing = emptyList()
                     return@LaunchedEffect
                 }
                 try {
                     listing = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        driveClient.listFilesInShelf()
+                        cloudStore.listChildren()
+                            ?: throw IllegalStateException("云端目录读取失败（可能已被删除），请重新选择文件夹")
                     }
                 } catch (e: Exception) {
                     loadErr = e.message
@@ -1751,7 +1722,8 @@ private fun ShelfContent(
                         when {
                             loadErr != null -> Text("读取失败：$loadErr", color = scheme.error)
                             listing == null -> LinearProgressIndicator(Modifier.fillMaxWidth())
-                            listing!!.isEmpty() -> Text("云端「条畅」文件夹还没有文件。拖一本书到右下角云盘图标，或多选后点上传。")
+                            !cloudHasFolder -> Text("还没选云端文件夹。点下方按钮，在系统选择器里选你的谷歌硬盘目录（一次即可，权限持久）。")
+                            listing!!.isEmpty() -> Text("云端文件夹还没有文件。拖一本书到右下角云盘图标，或多选后点上传。")
                             else -> {
                                 listing!!.forEach { cf ->
                                     Row(
@@ -1780,7 +1752,7 @@ private fun ShelfContent(
                                                     try {
                                                         val tmp = File(context.cacheDir, "cloud_${cf.name}")
                                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                            driveClient.download(cf.id, tmp)
+                                                            tmp.writeBytes(cloudStore.readFile(cf.documentId))
                                                         }
                                                         snackbarHostState.showSnackbar("已下载，正在导入书架…")
                                                         onImportFromCloud(tmp)
@@ -1802,7 +1774,7 @@ private fun ShelfContent(
                                                         )
                                                         dl.mkdirs()
                                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                            driveClient.download(cf.id, File(dl, cf.name))
+                                                            File(dl, cf.name).writeBytes(cloudStore.readFile(cf.documentId))
                                                         }
                                                         snackbarHostState.showSnackbar("已存到 Download/条畅")
                                                     } catch (e: Exception) {
@@ -1821,10 +1793,16 @@ private fun ShelfContent(
                     TextButton(onClick = { drivePanelOpen = false }) { Text("关闭") }
                 },
                 dismissButton = {
-                    TextButton(onClick = {
-                        driveClient.signOut()
-                        drivePanelOpen = false
-                    }) { Text("退出登录") }
+                    Row {
+                        TextButton(onClick = {
+                            if (cloudHasFolder) treePicker.launch(null)
+                        }) { Text("换文件夹") }
+                        TextButton(onClick = {
+                            cloudStore.clear()
+                            cloudHasFolder = false
+                            drivePanelOpen = false
+                        }) { Text("解除绑定") }
+                    }
                 }
             )
         }
@@ -2442,4 +2420,16 @@ private fun mergePageText(body: String, pageIndex1Based: Int, pageText: String):
     val end = if (next < 0) body.length else next
     return body.substring(0, existing) + block +
         (if (next < 0) "" else body.substring(next))
+}
+
+/** 云端上传的 MIME 推断（与导入侧 ReaderFormat 对应；未知走二进制流）。 */
+private fun guessCloudMime(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
+    "pdf" -> "application/pdf"
+    "epub" -> "application/epub+zip"
+    "txt" -> "text/plain"
+    "md", "markdown" -> "text/markdown"
+    "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    "mobi", "azw3" -> "application/x-mobipocket-ebook"
+    else -> "application/octet-stream"
 }
