@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.Popup
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
@@ -20,11 +22,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -55,12 +60,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.treechat.workbench.data.prefs.InputMode
@@ -1233,6 +1240,7 @@ fun SelectableMarkdownText(
                     selectionColor = selectionColor,
                     selectionRange = selectionRange,
                     quoteLinkRanges = linkRanges,
+                    quoteLinks = blockQuoteLinks.getOrNull(index).orEmpty(),
                     markGroups = blockMarks,
                     knownConcepts = knownConcepts,
                     rootCoordinates = rootCoordinates,
@@ -1441,6 +1449,11 @@ private fun SelectableBlock(
     knownConcepts: Set<String> = emptySet(),
     /** 多色标记组（块内显示坐标区间 + 颜色），见 toAnnotated 同名参数。 */
     markGroups: List<Pair<List<IntRange>, Color>> = emptyList(),
+    /**
+     * 本块的链接**全量数据**（区间 + 目标节点），供悬停预览定位。
+     * P3：桌面指针悬停链接 → 上方弹分支预览（点之前就知道去哪）。
+     */
+    quoteLinks: List<BlockQuoteLink> = emptyList(),
     // ---- 粗体呈现偏好（由调用方从 AppSettings 注入，见 SelectableMarkdownText 的同名注释）
     boldColorStyle: com.treechat.workbench.data.prefs.BoldColorStyle =
         com.treechat.workbench.data.prefs.BoldColorStyle.DEFAULT,
@@ -1615,23 +1628,129 @@ private fun SelectableBlock(
             onTextLayout = onLayout
         )
 
-        else -> Text(
-            text = block.toAnnotated(
-                colors = colors,
-                baseFontSize = baseFontSize,
-                highlightRanges = ranges,
-                highlightColor = highlightColor,
-                selectionRange = selectionRange,
-                selectionColor = selectionColor,
-                quoteLinkRanges = quoteLinkRanges,
-                        knownConcepts = knownConcepts,
-                markGroups = markGroups
-            ),
-            modifier = base.then(textPositionModifier),
-            fontSize = baseFontSize,
-            lineHeight = baseFontSize * 1.62f,
-            onTextLayout = onLayout
-        )
+        else -> {
+            // ---- P3 悬停预览：进链接区间 → 防抖 → 上方弹分支预览 ----
+            //
+            // 为什么值得做：链接此前"点了才知道去哪"，去错了还折返。
+            // 预览只需要节点自带字段（标题/时间），不需要任何查询。
+            // 触屏不会产生 Hover 事件（天然只在桌面指针生效）。
+            var hoverLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+            var hoveredNodeId by remember { mutableStateOf<String?>(null) }
+            var shownNodeId by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(hoveredNodeId) {
+                if (hoveredNodeId == null) {
+                    shownNodeId = null
+                } else {
+                    kotlinx.coroutines.delay(280)
+                    shownNodeId = hoveredNodeId
+                }
+            }
+            val hoverModifier = if (quoteLinks.isEmpty()) {
+                Modifier
+            } else {
+                Modifier.pointerInput(quoteLinks) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            when (event.type) {
+                                // ⚠️ 本项目 Compose UI 1.6.8 没有 PointerEventType.Hover
+                                //（1.7 才加）。鼠标悬停的等价判据：Enter/Move（未按压）
+                                // 进入时算落点，Exit 清空；按下（拖选）时隐藏预览。
+                                PointerEventType.Enter, PointerEventType.Move -> {
+                                    if (event.changes.any { it.pressed }) {
+                                        hoveredNodeId = null
+                                    } else {
+                                        val l = hoverLayout
+                                        if (l == null) {
+                                            hoveredNodeId = null
+                                        } else {
+                                            val offset = l.getOffsetForPosition(
+                                                event.changes.first().position
+                                            )
+                                            hoveredNodeId = quoteLinks.firstOrNull { link ->
+                                                offset >= link.range.first && offset <= link.range.last
+                                            }?.target?.node?.id
+                                        }
+                                    }
+                                }
+                                PointerEventType.Exit -> hoveredNodeId = null
+                                else -> Unit
+                            }
+                        }
+                    }
+                }
+            }
+            Text(
+                text = block.toAnnotated(
+                    colors = colors,
+                    baseFontSize = baseFontSize,
+                    highlightRanges = ranges,
+                    highlightColor = highlightColor,
+                    selectionRange = selectionRange,
+                    selectionColor = selectionColor,
+                    quoteLinkRanges = quoteLinkRanges,
+                    knownConcepts = knownConcepts,
+                    markGroups = markGroups
+                ),
+                modifier = base
+                    .then(textPositionModifier)
+                    .then(hoverModifier),
+                fontSize = baseFontSize,
+                lineHeight = baseFontSize * 1.62f,
+                onTextLayout = { hoverLayout = it; onLayout(it) }
+            )
+
+            val previewNode = shownNodeId?.let { id ->
+                quoteLinks.firstOrNull { it.target.node.id == id }?.target?.node
+            }
+            if (previewNode != null && hoverLayout != null) {
+                val rangeFirst = quoteLinks.firstOrNull {
+                    it.target.node.id == previewNode.id
+                }?.range?.first
+                val bbox = rangeFirst?.let { hoverLayout?.getBoundingBox(it) }
+                Popup(
+                    alignment = Alignment.TopStart,
+                    offset = IntOffset(
+                        (bbox?.left?.toInt() ?: 0).coerceAtLeast(0),
+                        ((bbox?.top?.toInt() ?: 0) - 172).coerceAtLeast(0)
+                    ),
+                    properties = PopupProperties(focusable = false)
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 4.dp,
+                        shape = RoundedCornerShape(10.dp),
+                        shadowElevation = 6.dp,
+                        modifier = Modifier.widthIn(max = 280.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                            Text(
+                                text = previewNode.title,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "建立于 " + java.text.SimpleDateFormat(
+                                    "yyyy-MM-dd HH:mm", java.util.Locale.getDefault()
+                                ).format(java.util.Date(previewNode.createdAt)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = "点击此链接进入该分支小窗",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
