@@ -134,6 +134,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -171,6 +172,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.material.icons.outlined.CloudUpload
+import com.treechat.workbench.data.reader.GoogleDriveClient
 import java.io.File
 import java.util.UUID
 
@@ -982,6 +985,39 @@ fun BookshelfScreen(
                     onSetEnabled = { entry, enabled ->
                         viewModel.setKnowledgeDocumentEnabled(entry.document.id, enabled)
                     },
+                    driveClient = remember { GoogleDriveClient(context) },
+                    onImportFromCloud = { f ->
+                        coroutineScope.launch {
+                        // 与"导入书籍"完全同一条管线（文件在本地缓存里，file:// 直接读）
+                        val doc = DocumentFileReader.importFromUri(context, android.net.Uri.fromFile(f))
+                        if (doc != null) {
+                            pool.addDocument(doc)
+                            if (doc.sampleText.isBlank()) {
+                                viewModel.ensureShelfRoomDocument(
+                                    documentId = doc.id,
+                                    title = doc.title,
+                                    fileName = doc.title,
+                                    sourceType = doc.format.roomSourceType(),
+                                    charCount = 0
+                                )
+                            } else {
+                                viewModel.ensureShelfRoomDocument(
+                                    documentId = doc.id,
+                                    title = doc.title,
+                                    fileName = doc.title,
+                                    sourceType = doc.format.roomSourceType(),
+                                    charCount = doc.sampleText.length
+                                )
+                            }
+                            snackbarHostState.showSnackbar("《${doc.title}》已进书架")
+                        } else {
+                            snackbarHostState.showSnackbar("导入失败：${DocumentFileReader.lastError ?: "无法解析该文件"}")
+                        }
+                        }
+                    },
+                    localFileOf = { entry ->
+                        pool.documents.firstOrNull { it.id == entry.document.id }?.let { File(it.filePath) }
+                    },
                     // 浏览器入口（与"导入书籍"并排，第一次进书架就能看见）
                     onOpenBrowser = { showWebBrowser = true },
                     // 工具栏
@@ -1378,9 +1414,20 @@ private fun ShelfContent(
     disableCoverCrop: Boolean,
     onDisableCoverCropChange: (Boolean) -> Unit,
     pdfCoverEnabled: Boolean,
-    onPdfCoverEnabledChange: (Boolean) -> Unit
+    onPdfCoverEnabledChange: (Boolean) -> Unit,
+    // ---- 谷歌云盘（书架 Finder 式落点 + 云端面板）----
+    driveClient: GoogleDriveClient,
+    /** 云端文件下载完成后由宿主注册进书架（池 + Room，与导入书籍同一条管线）。 */
+    onImportFromCloud: (File) -> Unit,
+    /** 书架条目 → 本地原书文件（路径在 ReaderDocumentPool，只有外层拿得到）。 */
+    localFileOf: (ShelfEntry) -> File?
 ) {
     val scheme = MaterialTheme.colorScheme
+    // 本组件作用域内需要的运行时（外层 bookshelfScreen 未必透传）：
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // ---- 书架浏览 UI 状态（搜索 / 排序 / 网格或列表）----
     var shelfQuery by remember { mutableStateOf("") }
@@ -1579,6 +1626,210 @@ private fun ShelfContent(
         var trashBounds by remember { mutableStateOf<Rect?>(null) }
         var trashDragPos by remember { mutableStateOf<Offset?>(null) }
 
+        // ---- 谷歌云盘（Finder 式第二落点：拖入即上传；点击打开云端面板）----
+        val driveClient = remember { GoogleDriveClient(context) }
+        var driveBounds by remember { mutableStateOf<Rect?>(null) }
+        // 拖拽幽灵：拖动中的书跟手（书架自由摆放画布只挪落点，视觉必须由外层补）
+        var draggedEntry by remember { mutableStateOf<ShelfEntry?>(null) }
+        // 云端面板与登录
+        var drivePanelOpen by remember { mutableStateOf(false) }
+        var driveLoginOpen by remember { mutableStateOf(false) }
+        var pendingUploads by remember { mutableStateOf<List<ShelfEntry>?>(null) }
+
+        fun selectedEntries(): List<ShelfEntry> =
+            entries.filter { selectedDocIds.containsKey(it.document.id) }
+
+        fun uploadToDrive(list: List<ShelfEntry>) {
+            val targets: List<ShelfEntry> = if (list.isEmpty()) return else list
+            if (!driveClient.isConfigured() || !driveClient.isAuthorized()) {
+                // 没登录：先记下要传的书，登录成功自动续传
+                pendingUploads = targets
+                driveLoginOpen = true
+                return
+            }
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("正在上传 ${targets.size} 本到谷歌云盘…")
+                try {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        targets.forEach { entry ->
+                            // 原书文件在 ReaderDocumentPool（filesDir 副本）；
+                            // KnowledgeDocument 上没有路径 —— 别搞混这两个模型。
+                            val f = localFileOf(entry)
+                            if (f != null && f.exists()) driveClient.uploadFile(f.name, f)
+                        }
+                    }
+                    snackbarHostState.showSnackbar("已上传 ${targets.size} 本到云盘「条畅」文件夹")
+                } catch (e: Exception) {
+                    snackbarHostState.showSnackbar("云盘上传失败：${e.message}")
+                }
+            }
+        }
+
+
+        // ---- 登录对话框：粘贴 Client ID → 浏览器授权（回环）→ 自动续传挂起任务 ----
+        if (driveLoginOpen) {
+            var clientIdInput by remember { mutableStateOf(driveClient.let { "" }) }
+            var busy by remember { mutableStateOf(false) }
+            var errMsg by remember { mutableStateOf<String?>(null) }
+            AlertDialog(
+                onDismissRequest = { if (!busy) driveLoginOpen = false },
+                title = { Text("连接谷歌云盘", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text(
+                            "一次性的准备：在 Google Cloud Console 建「Android 类型」OAuth 客户端" +
+                                "（包名 com.treechat.workbench），把 Client ID 粘到这里。授权范围只有" +
+                                "「本应用创建的文件」，你的其它网盘内容软件看不见。"
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = clientIdInput,
+                            onValueChange = { clientIdInput = it },
+                            singleLine = true,
+                            placeholder = { Text("xxxxxxxx.apps.googleusercontent.com") },
+                            textStyle = MaterialTheme.typography.bodySmall
+                        )
+                        errMsg?.let {
+                            Text(it, color = scheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !busy && clientIdInput.isNotBlank(),
+                        onClick = {
+                            busy = true
+                            driveClient.saveClientId(clientIdInput)
+                            coroutineScope.launch {
+                                val err = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    runCatching { driveClient.authorize() }
+                                        .exceptionOrNull()?.message
+                                }
+                                busy = false
+                                if (err == null && driveClient.isAuthorized()) {
+                                    driveLoginOpen = false
+                                    pendingUploads?.let { list ->
+                                        pendingUploads = null
+                                        uploadToDrive(list)
+                                    }
+                                } else {
+                                    errMsg = err ?: "授权未完成"
+                                }
+                            }
+                        }
+                    ) { Text(if (busy) "跳转浏览器…" else "登录") }
+                },
+                dismissButton = {
+                    TextButton(enabled = !busy, onClick = { driveLoginOpen = false }) { Text("取消") }
+                }
+            )
+        }
+
+        // ---- 云端面板：文件列表（"条畅"文件夹）+ 下载到本地 Download ----
+        if (drivePanelOpen) {
+            var listing by remember { mutableStateOf<List<GoogleDriveClient.CloudFile>?>(null) }
+            var loadErr by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(Unit) {
+                if (!driveClient.isConfigured() || !driveClient.isAuthorized()) {
+                    drivePanelOpen = false
+                    driveLoginOpen = true
+                    return@LaunchedEffect
+                }
+                try {
+                    listing = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        driveClient.listFilesInShelf()
+                    }
+                } catch (e: Exception) {
+                    loadErr = e.message
+                }
+            }
+            AlertDialog(
+                onDismissRequest = { drivePanelOpen = false },
+                title = { Text("谷歌云盘 · 条畅", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        when {
+                            loadErr != null -> Text("读取失败：$loadErr", color = scheme.error)
+                            listing == null -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                            listing!!.isEmpty() -> Text("云端「条畅」文件夹还没有文件。拖一本书到右下角云盘图标，或多选后点上传。")
+                            else -> {
+                                listing!!.forEach { cf ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp)
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                cf.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                "${cf.size / 1024 / 1024} MB",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = scheme.outline
+                                            )
+                                        }
+                                        Row {
+                                            // 直接进书架：下载到缓存 → 走导入书籍同一条管线
+                                            TextButton(onClick = {
+                                                coroutineScope.launch {
+                                                    try {
+                                                        val tmp = File(context.cacheDir, "cloud_${cf.name}")
+                                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                            driveClient.download(cf.id, tmp)
+                                                        }
+                                                        snackbarHostState.showSnackbar("已下载，正在导入书架…")
+                                                        onImportFromCloud(tmp)
+                                                        tmp.delete()
+                                                    } catch (e: Exception) {
+                                                        snackbarHostState.showSnackbar("导入失败：${e.message}")
+                                                    }
+                                                }
+                                            }) { Text("导入书架") }
+                                            // 存到系统 Download/条畅：任何 App 都能拿到
+                                            TextButton(onClick = {
+                                                coroutineScope.launch {
+                                                    try {
+                                                        val dl = java.io.File(
+                                                            android.os.Environment.getExternalStoragePublicDirectory(
+                                                                android.os.Environment.DIRECTORY_DOWNLOADS
+                                                            ),
+                                                            "条畅"
+                                                        )
+                                                        dl.mkdirs()
+                                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                            driveClient.download(cf.id, File(dl, cf.name))
+                                                        }
+                                                        snackbarHostState.showSnackbar("已存到 Download/条畅")
+                                                    } catch (e: Exception) {
+                                                        snackbarHostState.showSnackbar("下载失败：${e.message}")
+                                                    }
+                                                }
+                                            }) { Text("存文件") }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { drivePanelOpen = false }) { Text("关闭") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        driveClient.signOut()
+                        drivePanelOpen = false
+                    }) { Text("退出登录") }
+                }
+            )
+        }
+
+
         if (entries.isEmpty()) {
             EmptyShelfHint()
         } else {
@@ -1598,6 +1849,7 @@ private fun ShelfContent(
                         }
                     },
                     onBatchDelete = { batchDeleteConfirm = true },
+                    onUploadCloud = { uploadToDrive(selectedEntries()) },
                     onExitSelectionMode = {
                         selectionMode = false
                         selectedDocIds.clear()
@@ -1747,8 +1999,14 @@ private fun ShelfContent(
                                             ignoreCase = true
                                         ),
                                     trashBounds = trashBounds,
-                                    onDragFingerChange = { trashDragPos = it },
+                                    onDragFingerChange = { pos -> trashDragPos = pos; draggedEntry = if (pos == null) null else entry },
                                     onDropToTrash = { batchDeleteConfirm = true },
+                                    driveBounds = driveBounds,
+                                    onDropToDrive = {
+                                        uploadToDrive(
+                                            if (selectionMode) selectedEntries() else listOf(entry)
+                                        )
+                                    },
                                     onDragRelease = { rootPos ->
                                         // 松手落点：先判废纸篓（删除），否则就地摆放并落盘。
                                         val canvas = canvasBounds
@@ -1817,12 +2075,84 @@ private fun ShelfContent(
                                     ignoreCase = true
                                 ),
                             trashBounds = trashBounds,
-                            onDragFingerChange = { trashDragPos = it },
+                            onDragFingerChange = { pos -> trashDragPos = pos; draggedEntry = if (pos == null) null else entry },
                             onDropToTrash = { batchDeleteConfirm = true }
                         )
                     }
                 }
             }
+
+                // ---- 拖拽幽灵：被拖的书跟手（拖起时绘一册半透明缩卡）----
+                val ghostEntry = draggedEntry
+                val ghostPos = trashDragPos
+                if (ghostEntry != null && ghostPos != null) {
+                    Surface(
+                        color = scheme.surfaceContainerHigh.copy(alpha = 0.94f),
+                        tonalElevation = 8.dp,
+                        shadowElevation = 10.dp,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .offset {
+                                val ghostW = with(density) { 50.dp.toPx() }
+                                val ghostTop = with(density) { 90.dp.toPx() }
+                                IntOffset((ghostPos.x - ghostW).toInt(), (ghostPos.y - ghostTop).toInt())
+                            }
+                            .size(100.dp, 140.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxSize().padding(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.AutoStories,
+                                contentDescription = null,
+                                tint = scheme.primary,
+                                modifier = Modifier.size(30.dp)
+                            )
+                            Text(
+                                text = ghostEntry.document.title,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = scheme.onSurface,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                // ---- 谷歌云盘落点：拖入即上传；点开 = 云端面板 ----
+                if (selectionMode) {
+                    val driveHot = trashDragPos != null &&
+                        driveBounds?.contains(trashDragPos!!) == true
+                    Surface(
+                        onClick = { drivePanelOpen = true },
+                        shape = CircleShape,
+                        color = if (driveHot) scheme.primaryContainer else scheme.surfaceContainerHighest,
+                        shadowElevation = 6.dp,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 92.dp, bottom = 18.dp)
+                            .size(58.dp)
+                            .onGloballyPositioned { coords ->
+                                val p = coords.positionInRoot()
+                                driveBounds = Rect(
+                                    p.x, p.y,
+                                    p.x + coords.size.width, p.y + coords.size.height
+                                )
+                            }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Outlined.CloudUpload,
+                                contentDescription = "拖到这里上传谷歌云盘，点按打开云端",
+                                tint = if (driveHot) scheme.primary else scheme.onSurfaceVariant,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+                }
 
                 // 废纸篓：多选态下出现在右下角；被拖到上方时高亮。
                 if (selectionMode) {
@@ -1856,6 +2186,12 @@ private fun ShelfContent(
                         }
                     }
                 }
+
+                // 本组件自己的提示条（云盘上传/下载反馈在这里出现）
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
             }
         }
     }

@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.CheckCircle
@@ -194,6 +195,8 @@ internal fun ShelfBatchBar(
     allSelected: Boolean,
     onSelectAllToggle: () -> Unit,
     onBatchDelete: () -> Unit,
+    /** 批量上传到谷歌云盘（长按多选后"添加"的入口）。 */
+    onUploadCloud: () -> Unit = {},
     onExitSelectionMode: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -225,6 +228,14 @@ internal fun ShelfBatchBar(
                 Text(if (allSelected) "取消全选" else "全选")
             }
             if (selectedCount > 0) {
+                // 上传云盘：与拖到 Drive 图标同一条上传通路
+                IconButton(onClick = onUploadCloud) {
+                    Icon(
+                        Icons.Outlined.CloudUpload,
+                        contentDescription = "上传到谷歌云盘",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
                 IconButton(onClick = onBatchDelete) {
                     Icon(
                         Icons.Filled.Delete,
@@ -379,6 +390,9 @@ internal fun ShelfBookCard(
     onDragFingerChange: (Offset?) -> Unit = {},
     /** 松手时手指落在废纸篓内。 */
     onDropToTrash: () -> Unit = {},
+    /** 谷歌云盘图标的屏幕矩形：拖书到这里松手 = 上传（Finder 式）。 */
+    driveBounds: Rect? = null,
+    onDropToDrive: () -> Unit = {},
     /**
      * 松手时的**root 坐标**（自由摆放用）。
      *
@@ -481,6 +495,8 @@ internal fun ShelfBookCard(
                                         onDragFingerChange(null)
                                         if (trashBounds?.contains(rootPos) == true) {
                                             onDropToTrash()
+                                        } else if (driveBounds?.contains(rootPos) == true) {
+                                            onDropToDrive()
                                         } else {
                                             onDragRelease(rootPos)
                                         }
@@ -680,6 +696,8 @@ internal fun ShelfBookCard(
                                         // 一直留在屏幕上。
                                         if (trashBounds?.contains(rootPos) == true) {
                                             onDropToTrash()
+                                        } else if (driveBounds?.contains(rootPos) == true) {
+                                            onDropToDrive()
                                         } else {
                                             onDragRelease(rootPos)
                                         }

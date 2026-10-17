@@ -13,8 +13,8 @@ android {
         applicationId = "com.treechat.workbench"
         minSdk = 29
         targetSdk = 34
-        versionCode = 76
-        versionName = "1.41.24"
+        versionCode = 77
+        versionName = "1.41.25"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
