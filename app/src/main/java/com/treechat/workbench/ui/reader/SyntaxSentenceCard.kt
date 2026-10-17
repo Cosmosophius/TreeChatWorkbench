@@ -159,11 +159,14 @@ fun SyntaxSentenceCard(
                         fontWeight = FontWeight.SemiBold,
                         color = scheme.onSurfaceVariant
                     )
-                    val trunk = units.firstOrNull { it.level == 0 }
+                    // 主干 = 主语+谓语+宾语（成分级 units），没有成分级时退回整句
+                    val trunk = units.filter { it.level == 0 && it.role.any { k -> k in "主谓宾" } }
+                        .joinToString(" ") { it.text }
+                        .ifBlank { units.firstOrNull { it.level == 0 }?.text ?: sourceSentence }
                     Text(
-                        text = trunk?.text ?: sourceSentence,
+                        text = trunk,
                         style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
-                        color = syntaxRoleColor(trunk?.role ?: "主语", scheme),
+                        color = scheme.primary,
                         fontWeight = FontWeight.SemiBold
                     )
 
@@ -181,13 +184,36 @@ fun SyntaxSentenceCard(
                         )
                         Column(modifier = Modifier.fillMaxWidth()) {
                             nested.forEach { item ->
-                                Text(
-                                    text = "　".repeat(item.unit.level.coerceAtLeast(0)) +
-                                        "└ " + "${item.unit.role}：${item.unit.text}",
-                                    style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
-                                    color = syntaxRoleColor(item.unit.role, scheme),
-                                    modifier = Modifier.padding(vertical = 1.dp)
-                                )
+                                val clause = item.unit.text
+                                val cut = clause.indexOfFirst { it == ' ' }
+                                val lead = if (cut > 0) clause.substring(0, cut) else clause
+                                val rest = if (cut > 0) clause.substring(cut) else ""
+                                // 树行 = 缩进(level) + └ + 引导词(角色色/加粗) + 其余(正文色)
+                                // 与参考截图一致：色词本身就是"角色标签"，不再另写 role 文案
+                                Row(
+                                    modifier = Modifier.padding(
+                                        start = ((item.unit.level.coerceAtLeast(1) - 1) * 14).dp
+                                    )
+                                ) {
+                                    Text(
+                                        text = "└ ",
+                                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
+                                        color = scheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = lead,
+                                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = syntaxRoleColor(item.unit.role, scheme)
+                                    )
+                                    if (rest.isNotEmpty()) {
+                                        Text(
+                                            text = rest,
+                                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
+                                            color = scheme.onSurface
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

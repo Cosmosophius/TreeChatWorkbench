@@ -652,8 +652,6 @@ internal fun LiveTextPageCard(
                         findActiveIndex = findActiveIndex,
                         onFindCount = onFindCount,
                         onAskQuestion = onAskQuestion,
-                        onHighlight = { text -> onHighlight(text, pageNumber - 1) },
-                        onAddNote = { text -> onAddNote(text, pageNumber - 1) },
                         onOpenEtymology = onOpenEtymology,
                         onTapBlank = onTapBlank,
                         quoteLinkTargets = quoteLinkTargets,
@@ -961,12 +959,6 @@ private fun NativeSelectionTextLayer(
                                 clip?.setPrimaryClip(android.content.ClipData.newPlainText("text", t))
                             }
                         },
-                        onHighlight = {
-                            val t = picked
-                            controller.clear()
-                            picked = null
-                            if (!t.isNullOrBlank()) onHighlight(t)
-                        },
                         onSelectAll = {},
                         onDismiss = {
                             controller.clear()
@@ -978,12 +970,7 @@ private fun NativeSelectionTextLayer(
                             picked = null
                             if (!t.isNullOrBlank()) onOpenEtymology(t)
                         },
-                        onNote = {
-                            val t = picked
-                            controller.clear()
-                            picked = null
-                            if (!t.isNullOrBlank()) onAddNote(t)
-                        },
+
                         onTranslate = onTranslate?.let { callback ->
                             {
                                 val t = picked

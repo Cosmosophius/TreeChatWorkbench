@@ -185,7 +185,13 @@ fun FloatingSelectionToolbar(
     anchorRect: Rect,
     onAsk: () -> Unit,
     onCopy: () -> Unit,
-    onHighlight: () -> Unit,
+    /**
+     * 划线（高亮）动作。**可空**：不传（null）就不显示这个按钮。
+     * 对话界面照常传（持久高亮是那里的功能）；
+     * 阅读器 2026-10-17 起移除划线/笔记入口 —— 用户明确不要，
+     * 读书笔记的采集只保留手写批注层与右侧边栏。
+     */
+    onHighlight: (() -> Unit)? = null,
     onSelectAll: () -> Unit,
     onDismiss: () -> Unit,
     highlightActive: Boolean = false,
@@ -268,12 +274,14 @@ fun FloatingSelectionToolbar(
                 if (onEtymology != null) {
                     ToolbarAction(Icons.Default.Translate, "词源·音标", onEtymology)
                 }
-                ToolbarAction(
-                    Icons.Default.Brush,
-                    if (highlightActive) highlightActiveLabel else highlightLabel,
-                    onHighlight,
-                    active = highlightActive
-                )
+                if (onHighlight != null) {
+                    ToolbarAction(
+                        Icons.Default.Brush,
+                        if (highlightActive) highlightActiveLabel else highlightLabel,
+                        onHighlight,
+                        active = highlightActive
+                    )
+                }
                 if (onNote != null) {
                     ToolbarAction(Icons.AutoMirrored.Filled.NoteAdd, "笔记", onNote)
                 }

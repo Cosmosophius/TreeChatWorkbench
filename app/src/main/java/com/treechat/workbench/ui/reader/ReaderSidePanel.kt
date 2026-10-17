@@ -192,7 +192,6 @@ fun ReaderSidePanel(
     /** 点生词列表某词 → 跳「词条」页展示。 */
     onPickWord: (String) -> Unit,
     onWordFocused: (String?) -> Unit,
-    onOpenNotesBoard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -264,7 +263,7 @@ fun ReaderSidePanel(
                     PanelTab.VOCAB -> VocabPane(state, summary, onPickWord)
                     PanelTab.ENTRY -> EntryPane(state, focusedWord, onWordFocused)
                     PanelTab.AI -> AiPane(state, ai, focusedWord)
-                    PanelTab.NOTES -> NotesPane(notes, onOpenNotesBoard)
+                    PanelTab.NOTES -> NotesPane(notes)
                     PanelTab.SYNTAX -> SyntaxPane(
                         sourceSentence = syntaxSource,
                         units = syntaxUnits,
@@ -561,11 +560,10 @@ private fun AiPane(
     }
 }
 
-/** 「注释」页：本书读书笔记卡片列表。 */
+/** 「注释」页：本书读书笔记卡片列表。白板本体在主界面「批注笔记」面板。 */
 @Composable
 private fun NotesPane(
-    notes: List<InkCardSnapshot>,
-    onOpenNotesBoard: () -> Unit
+    notes: List<InkCardSnapshot>
 ) {
     val scheme = MaterialTheme.colorScheme
     Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
@@ -579,7 +577,6 @@ private fun NotesPane(
                 color = scheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
-            TextButton(onClick = onOpenNotesBoard) { Text("打开白板") }
         }
 
         if (notes.isEmpty()) {

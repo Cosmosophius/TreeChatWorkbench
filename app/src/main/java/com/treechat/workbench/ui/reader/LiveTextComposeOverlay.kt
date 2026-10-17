@@ -143,8 +143,7 @@ data class OcrWordBox(
 fun LiveTextComposeOverlay(
     wordBoxes: List<OcrWordBox>,
     onAskQuestion: (selectedText: String) -> Unit,
-    onHighlight: (selectedText: String) -> Unit,
-    onAddNote: (selectedText: String) -> Unit,
+
     onOpenEtymology: (selectedText: String) -> Unit = {},
     syntaxMarks: List<SyntaxBoxMark> = emptyList(),
     /** 考纲生词命中的词盒 id（空 = 关闭考纲），命中盒画考纲色下划线。 */
@@ -1364,14 +1363,7 @@ fun LiveTextComposeOverlay(
                     toolbarPosition = null
                     onAskQuestion(fullText)
                 },
-                onHighlight = {
-                    toolbarPosition = null
-                    onHighlight(fullText)
-                },
-                onAddNote = {
-                    toolbarPosition = null
-                    onAddNote(fullText)
-                },
+
                 onOpenEtymology = {
                     toolbarPosition = null
                     onOpenEtymology(fullText)
@@ -1408,8 +1400,7 @@ fun LiveTextComposeOverlay(
 internal fun LiveTextActionBar(
     fullText: String,
     onAskQuestion: () -> Unit,
-    onHighlight: () -> Unit,
-    onAddNote: () -> Unit,
+
     onOpenEtymology: () -> Unit,
     /** 为 null 时不显示「翻译」（内置浏览器没有模型通路，不该出现死按钮）。 */
     onTranslate: (() -> Unit)? = null,
@@ -1452,27 +1443,10 @@ internal fun LiveTextActionBar(
                 )
             }
 
-            // 2. 划线 (高亮同步笔记)
-            IconButton(onClick = onHighlight) {
-                Icon(
-                    imageVector = Icons.Outlined.BorderColor,
-                    contentDescription = "划线标记",
-                    tint = scheme.secondary,
-                    modifier = Modifier.padding(2.dp)
-                )
-            }
+            // 划线/笔记按钮已按用户要求整体移除（2026-10-17）：
+            // 读书笔记采集只保留手写批注层；已有划线在右侧边栏「注释」页可见。
 
-            // 3. 笔记 (批注卡片)
-            IconButton(onClick = onAddNote) {
-                Icon(
-                    painter = painterResource(com.treechat.workbench.R.drawable.ic_zi_brush),
-                    contentDescription = "写笔记批注",
-                    tint = scheme.tertiary,
-                    modifier = Modifier.padding(2.dp)
-                )
-            }
-
-            // 4. 跨语言历史拟音与词源
+            // 3. 跨语言历史拟音与词源
             IconButton(onClick = onOpenEtymology) {
                 Icon(
                     painter = painterResource(com.treechat.workbench.R.drawable.ic_ip_chinese),

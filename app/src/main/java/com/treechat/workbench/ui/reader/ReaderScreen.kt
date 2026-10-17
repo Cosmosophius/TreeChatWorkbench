@@ -1242,12 +1242,7 @@ fun BookshelfScreen(
                             panelFocusedWord = word
                             panelState.applyTab(PanelTab.ENTRY)
                         },
-                        onWordFocused = { panelFocusedWord = it },
-                        onOpenNotesBoard = {
-                            coroutineScope.launch {
-                                snackbarHostState.showSnackbar("读书笔记白板在主界面的「批注笔记」面板里打开")
-                            }
-                        }
+                        onWordFocused = { panelFocusedWord = it }
                     )
                 }
 

@@ -2451,8 +2451,11 @@ private val SYNTAX_JSON_CONTRACT: String = """
      2 表示再往里一层的嵌套，依此类推。
    - role：该单元的句法角色，用简短中文标注，例如"主句""宾语从句""定语从句"
      "状语从句""时间状语""同位语""分词短语""介词短语""并列分句"。
-3. 单元的 text 在按数组顺序拼接后应当与原文本一致（允许不覆盖纯标点）。
-4. 无法判断时宁可少切，也不要编造层级。
+3. **主句（level=0）要再按成分细分**：把主句切成主语/谓语/宾语/定语/状语/补语/
+   并列连接等成分单元，role 直接写"主语""谓语""宾语""定语""状语""补语""并列连接"；
+   从句（level≥1）保持整句一个单元，role 写从句类型（如"宾语从句"）。
+4. 单元的 text 在按数组顺序拼接后应当与原文本一致（允许不覆盖纯标点）。
+5. 无法判断时宁可少切，也不要编造层级。
 
 示例（输入：Although it rained, we went out because we wanted fresh air.）：
 [{"text":"Although it rained","level":1,"role":"让步状语从句"},{"text":", we went out","level":0,"role":"主句"},{"text":"because we wanted fresh air","level":1,"role":"原因状语从句"}]

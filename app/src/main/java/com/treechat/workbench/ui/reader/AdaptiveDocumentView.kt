@@ -1182,13 +1182,10 @@ fun AdaptiveDocumentView(
                 }
                 clearTextSelection()
             },
-            onHighlight = {
-                val t = selectedText
-                val p = selectedPageIndex
-                clearTextSelection()
-                onHighlight(t, p)
-            },
-            // 阅读器不提供"全选"（showSelectAll = false），这里给一个空实现占位。
+            // 划线/笔记入口已按用户要求整体移除（2026-10-17）：
+            // 工具条不再出现这两个按钮；读书笔记采集只保留手写批注层，
+            // 已有的划线数据仍在右侧边栏「注释」页可见。
+            // onSelectAll 占位：阅读器不提供"全选"。
             onSelectAll = {},
             onDismiss = { clearTextSelection() },
             highlightActive = false,
@@ -1196,12 +1193,6 @@ fun AdaptiveDocumentView(
                 val t = selectedText
                 clearTextSelection()
                 onOpenEtymology(t)
-            },
-            onNote = {
-                val t = selectedText
-                val p = selectedPageIndex
-                clearTextSelection()
-                onAddNote(t, p)
             },
             onTranslate = {
                 val t = selectedSentence.ifBlank { selectedText }
@@ -1216,9 +1207,7 @@ fun AdaptiveDocumentView(
             },
             copyFeedback = copied,
             showSelectAll = false,
-            askLabel = "提问",
-            highlightLabel = "划线",
-            highlightActiveLabel = "取消划线"
+            askLabel = "提问"
         )
 
         // 阅读排版面板（字号 / 行距 / 护眼底色）
