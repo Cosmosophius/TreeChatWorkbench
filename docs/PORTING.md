@@ -57,3 +57,26 @@
 - 不动 androidx 之外的安卓发版细节；改共享文件前先确认 master 是否有未合并的发版改动。
 - 每阶段结束：`git commit`（消息 = 本阶段交接），必要时回写本文件。
 - 简体汉语界面、MD3 矢量、无 emoji 等全项目纪律不变。
+
+## 7. 执行记录
+
+### M1 桌面壳（2026-10-17，已完成）
+
+路线决策：按 §3 建议走 **路线 B**。已落地：
+
+- `:core`（纯 JVM 模块）：`com.treechat.core.AppEnv` + `AppFile` 接口——
+  §1「Context 全局」抽象的落点。安卓侧尚未接入，接入安排在 M2/M3 做横切替换。
+- `:desktop`（Compose Desktop 模块，1.6.11 + Kotlin 2.0.0，JVM 21）：
+  空 Compose Window 跑通；`DesktopAppEnv` / `DesktopAppFile`（java.io + AWT 剪贴板/浏览器）实现已过冒烟：
+  文件读写、UUID、剪贴板均通过（窗口截图存 `screenshots/desktop-m1-shell-window-20261017.png`）。
+- 工程接线：`settings.gradle.kts` 增加 `include(":core", ":desktop")`；
+  根 `build.gradle.kts` 增加 `kotlin("jvm") 2.0.0` / `org.jetbrains.compose 1.6.11` 的 `apply false` 声明
+  （子模块不带版本引用，否则报 "already on the classpath with an unknown version"）。
+- 验证：安卓 `:app:compileFullReleaseKotlin` + `:app:compileLiteReleaseKotlin --offline` 全绿；
+  桌面 `:desktop:run` 实机出窗。依赖全部来自既有镜像（aliyun）与 Maven Central 首次在线拉取，
+  已进 Gradle 缓存，此后可离线。
+
+M2 预备知识（给下个会话）：
+- 桌面侧执行命令：`JAVA_HOME=tools/jdk21 ./gradlew :desktop:run --console=plain`
+  （系统 JDK 26 仍会让 Gradle 报一行 `26`，同安卓线的坑）。
+- 冒烟入口：`:desktop:run --args="--appenv-smoke"`（无窗口，验证 AppEnv 全链路）。
