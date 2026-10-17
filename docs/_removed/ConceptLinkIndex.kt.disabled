@@ -1,0 +1,82 @@
+package com.treechat.workbench.ui.chat
+
+import com.treechat.workbench.etymology.data.HanPhonologyIndex
+import com.treechat.workbench.etymology.data.RuPhonologyIndex
+import com.treechat.workbench.etymology.data.VocabIndex
+import com.treechat.workbench.etymology.data.ZhRuIndex
+
+/**
+ * `[[概念名]]` 概念链接的**命中判定**（静态词库侧）。
+ *
+ * ## 它在整个链路里的位置
+ * 模型在回答里用 `[[概念名]]` 把值得下钻的核心概念括起来（见系统提示词的加句）。
+ * 渲染时，正文解析会把双方括号吃掉、只留概念名，并按"是否命中本地权威词库"
+ * 把它渲染成两种链接：
+ * - **命中** → 实线超链接，点击打开词典/词源面板（EtymoScope）；
+ * - **未命中** → 弱化的 AI 链接，点击触发一次轻量追问。
+ *
+ * ## 命中判定用的是哪几个索引（都是项目里的**真实**数据源）
+ * - [VocabIndex.english]：英汉音标词表（英文词）
+ * - [VocabIndex.russian] / [RuPhonologyIndex.ipaOf]：俄汉词表 / Wiktionary 俄语音标
+ * - [ZhRuIndex.zhToRu]：汉→俄整词对译（han_ru.tsv）
+ * - [HanPhonologyIndex.of]：Baxter-Sagart 汉字音韵表（逐字命中即算）
+ *
+ * 只要**任一**索引命中，就判定为"本地词库收录"，走词典/词源通路。
+ * 这些索引都是进程内只读 map（在 TreeChatApp 启动时载入），
+ * 因此这里可以在组合期同步判断，不会有 IO。
+ */
+object ConceptLinkIndex {
+
+    /** 概念名是否命中本地权威词库。 */
+    fun isKnown(rawTerm: String): Boolean {
+        val term = rawTerm.trim()
+        if (term.isEmpty()) return false
+
+        // 英文词（英汉音标词表）
+        if (VocabIndex.english(term) != null) return true
+
+        // 俄文词 / 俄语真实音标
+        if (VocabIndex.russian(term) != null) return true
+        if (RuPhonologyIndex.ipaOf(term) != null) return true
+
+        // 汉→俄整词对译
+        if (ZhRuIndex.zhToRu(term).isNotEmpty()) return true
+
+        // 汉字音韵（Baxter-Sagart）：逐字检查，任一汉字收录即算命中
+        if (term.any { ch -> ch in '\u4E00'..'\u9FA5' && HanPhonologyIndex.of(ch) != null }) {
+            return true
+        }
+
+        return false
+    }
+
+    /**
+     * 从一段原始 Markdown 里抽取概念名并逐一判定命中，返回**命中的那批**概念名集合。
+     *
+     * 返回的集合直接喂给正文渲染层（SelectableMarkdownText 的 knownConcepts）：
+     * 集合里有 → 实线；没有 → 弱化。因此这里只放命中的，未命中的不放。
+     *
+     * 说明：这里按 `[[...]]` 做一次轻量正则扫描，与正文解析器吃标记的规则一致；
+     * 即便某个 `[[x]]` 落在代码块里（正文不会把它当概念），这里多算一次命中
+     * 也无副作用 —— 代码块里根本不生成概念片段。
+     */
+    fun knownIn(markdown: String): Set<String> {
+        if (!markdown.contains("[[", ignoreCase = false)) return emptySet()
+        val hits = HashSet<String>()
+        var i = 0
+        while (i < markdown.length) {
+            val open = markdown.indexOf("[[", i)
+            if (open < 0) break
+            val close = markdown.indexOf("]]", open + 2)
+            if (close < 0) break
+            // 注意：加入集合的是**原样**的概念名（不 trim），因为渲染层做
+            // `span.text in knownConcepts` 的集合判定，而 span.text 就是原样子串。
+            // 若这里 trim 过，`[[ 递归 ]]` 这种带空格的写法就会判成"未命中"。
+            // isKnown 内部会自行 trim 再做词库查询。
+            val raw = markdown.substring(open + 2, close)
+            if (raw.isNotBlank() && isKnown(raw)) hits.add(raw)
+            i = close + 2
+        }
+        return hits
+    }
+}

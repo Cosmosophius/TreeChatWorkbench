@@ -1,0 +1,2369 @@
+package com.treechat.workbench.ui.chat
+
+import android.app.Application
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
+import com.treechat.workbench.data.db.AppDatabase
+import com.treechat.workbench.data.model.ChatMessage
+import com.treechat.workbench.data.model.Conversation
+import com.treechat.workbench.data.model.ConversationNode
+import com.treechat.workbench.data.model.Folder
+import com.treechat.workbench.data.model.Highlight
+import com.treechat.workbench.data.model.KnowledgeDocument
+import com.treechat.workbench.data.model.WordExample
+import com.treechat.workbench.data.model.WordFavorite
+import com.treechat.workbench.data.model.WordKind
+import com.treechat.workbench.data.prefs.AppSettings
+import com.treechat.workbench.network.client.AiStreamClient
+import com.treechat.workbench.network.client.ChatEvent
+import com.treechat.workbench.network.protocol.PromptMessage
+import com.treechat.workbench.network.protocol.ProviderConfig
+import com.treechat.workbench.network.search.SearchResult
+import com.treechat.workbench.rag.Chunker
+import com.treechat.workbench.rag.DocumentParser
+import com.treechat.workbench.rag.KnowledgeRetriever
+import com.treechat.workbench.rag.RagIndexingScheme
+import com.treechat.workbench.task.BackgroundTaskRegistry
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ChatNodeViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val db = AppDatabase.getInstance(application)
+    private val dao = db.conversationDao()
+    private val folderDao = db.folderDao()
+    private val highlightDao = db.highlightDao()
+    private val knowledgeDao = db.knowledgeDao()
+    private val wordDao = db.wordDao()
+    private val aiClient = AiStreamClient()
+    private val gson = Gson()
+
+    /**
+     * 本地教材检索（RAG）。
+     *
+     * ⚠️ 只能在 Dispatchers.IO 上调用（纯 CPU 聚合 + 查库），
+     * 见 KnowledgeRetriever 的类文档。runCompletion 已跑在 IO 上。
+     */
+    val knowledgeRetriever = KnowledgeRetriever(knowledgeDao)
+    val cloudEmbeddingClient = com.treechat.workbench.rag.CloudEmbeddingClient()
+
+    /**
+     * 最近一次生成实际用到的教材出处（供界面显示"本次依据了哪几段"）。
+     *
+     * 用 StateFlow 而不是普通字段：生成是在 IO 线程发起的，
+     * 界面需要能观察到它的变化（用户会想知道"它到底有没有用我的教材"）。
+     */
+    private val _lastKnowledgeCitations = MutableStateFlow<List<String>>(emptyList())
+    val lastKnowledgeCitations: StateFlow<List<String>> = _lastKnowledgeCitations.asStateFlow()
+
+    /** 应用设置由 ViewModel 单点持有，避免多份实例导致状态不刷新。 */
+    val settings = AppSettings(application)
+
+    val sensitiveBranchStore = com.treechat.workbench.data.prefs.SensitiveBranchStore.get(application)
+    val conversationDaoInstance get() = dao
+    val folderDaoInstance get() = folderDao
+
+    /** 只读全文检索：正文命中关键词的会话 id 集合（访达「搜对话」用）。 */
+    suspend fun conversationIdsMatchingContent(keyword: String): Set<String> =
+        if (keyword.isBlank()) emptySet()
+        else runCatching { dao.conversationIdsContaining(keyword).toSet() }.getOrDefault(emptySet())
+
+    /** 只读全文检索：切片正文命中关键词的文档 id 集合（书架「搜书」用）。 */
+    suspend fun documentIdsMatchingContent(keyword: String): Set<String> =
+        if (keyword.isBlank()) emptySet()
+        else runCatching { knowledgeDao.documentIdsContaining(keyword).toSet() }.getOrDefault(emptySet())
+
+    fun isNodeSensitive(nodeId: String): Boolean = sensitiveBranchStore.isNodeSensitive(nodeId)
+    fun toggleNodeSensitive(nodeId: String): Boolean = sensitiveBranchStore.toggleNodeSensitive(nodeId)
+    fun setNodeSensitive(nodeId: String, sensitive: Boolean) = sensitiveBranchStore.setNodeSensitive(nodeId, sensitive)
+
+    var activeProvider by mutableStateOf(ProviderConfig.defaultDeepSeek())
+
+    /**
+     * 已保存的**全部**服务商（多服务商并存）。
+     *
+     * 为什么必须是一个列表：旧实现只存一份配置，保存时整体覆盖，于是
+     * "配好 DeepSeek 再配 Gemini，DeepSeek 就没了"。用户要同时留几条链路
+     * 时只能反复重填 —— 这是被明确指出的致命缺陷。
+     *
+     * 这里由 ViewModel 单点持有，MainActivity 只负责在启动时从磁盘灌入、
+     * 在保存时写回磁盘（与 `settings` 的持有方式一致，避免两份实例不同步）。
+     */
+    var savedProviders by mutableStateOf<List<ProviderConfig>>(emptyList())
+        private set
+
+    /**
+     * 合并一批服务商进来（按 id 覆盖，幂等）。
+     *
+     * 与 DeepSeek Harness 的 `set(["providers", id])` 语义一致：同名 id 是
+     * **更新那一条**，不是追加成两条。列表顺序保持稳定（已存在则原位替换，
+     * 新的追加到末尾），这样用户在设置里的排序不会因为一次保存而跳乱。
+     */
+    fun upsertProviders(incoming: List<ProviderConfig>, makeActive: ProviderConfig?) {
+        if (incoming.isNotEmpty()) {
+            val merged = savedProviders.toMutableList()
+            incoming.forEach { provider ->
+                val index = merged.indexOfFirst { it.id == provider.id }
+                if (index >= 0) merged[index] = provider else merged.add(provider)
+            }
+            savedProviders = merged
+        }
+        if (makeActive != null) activeProvider = makeActive
+    }
+
+    /** 删除一条服务商；若删的正是当前选中项，则回落到剩余的第一条。 */
+    fun removeProvider(id: String) {
+        val remaining = savedProviders.filterNot { it.id == id }
+        savedProviders = remaining
+        if (activeProvider.id == id) {
+            remaining.firstOrNull()?.let { activeProvider = it }
+        }
+    }
+
+    /**
+     * 用给定列表**整体替换**已保存的服务商。
+     *
+     * 与 upsertProviders 的关键差别：**它会删除**不在列表里的条目。
+     * 删除服务商必须走这里 —— upsert 只做合并，被删掉的那条会在下一次
+     * 落盘时"复活"（因为落盘读的是 savedProviders 全集）。
+     *
+     * 若当前选中的服务商已不在新列表里，回落到新列表的第一条；
+     * 新列表为空时保留原选中项（界面此时处于"一个都没有"的状态，
+     * UI 会引导去添加，而不是静默清空）。
+     */
+    fun replaceProviders(next: List<ProviderConfig>) {
+        savedProviders = next
+        if (next.isNotEmpty() && next.none { it.id == activeProvider.id }) {
+            activeProvider = next.first()
+        }
+    }
+
+    /** 切换当前服务商。id 不存在时什么都不做（不静默改成别的）。 */
+    fun selectProvider(id: String) {
+        savedProviders.firstOrNull { it.id == id }?.let { activeProvider = it }
+    }
+
+    // ------------------------------------------------------------ 组织层数据
+
+    val folders: StateFlow<List<Folder>> = folderDao.observeAllFolders()
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val conversations: StateFlow<List<Conversation>> = folderDao.observeAllConversations()
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    private val _activeConversationId = MutableStateFlow<String?>(null)
+    val activeConversationId: StateFlow<String?> = _activeConversationId.asStateFlow()
+
+    val activeConversation: StateFlow<Conversation?> =
+        combine(_activeConversationId, conversations) { id, list ->
+            list.firstOrNull { it.id == id }
+        }.stateIn(viewModelScope, SharingStarted.Lazily, null)
+
+    /** 当前会话的根节点（聊天视图与开窗都以它为入口）。 */
+    private val _rootNodeId = MutableStateFlow<String?>(null)
+    val rootNodeId: StateFlow<String?> = _rootNodeId.asStateFlow()
+
+    /** 当前会话的分支树节点，供拓扑工作台绘制。 */
+    val nodes: StateFlow<List<ConversationNode>> = _activeConversationId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(emptyList()) else dao.observeNodesForConversation(id)
+        }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // ------------------------------------------------------------ 运行态
+
+    private val _streamingNodes = MutableStateFlow<Set<String>>(emptySet())
+    val streamingNodes: StateFlow<Set<String>> = _streamingNodes.asStateFlow()
+
+    private val _searchingQuery = MutableStateFlow<String?>(null)
+    val searchingQuery: StateFlow<String?> = _searchingQuery.asStateFlow()
+
+    /**
+     * 正在流式接收的正文，按节点分（内存态，不落库）。
+     *
+     * ## 为什么需要它（速度优化的核心）
+     *
+     * 旧链路是：每 45ms `dao.updateMessage` 写一次 Room → Room 的 Flow
+     * 重新发射整个消息列表 → Compose 全列表重组 + 整条 markdown 重解析。
+     * 每秒 22 次"写库 + 全列表重查 + 全文重解析"，出字越快反而越卡，
+     * 用户看到的就是"吐字慢、一顿一顿"。
+     *
+     * 新链路：delta 进来直接写这个内存态（约每 16ms 推一次界面），
+     * 落库降频到每 500ms 一次快照 + 结束/失败/取消时一次收尾。
+     * DB 写从每秒 22 次降到每秒 2 次，感知出字速度只受网络限制。
+     */
+    private val _streamingText = MutableStateFlow<Map<String, String>>(emptyMap())
+    val streamingText: StateFlow<Map<String, String>> = _streamingText.asStateFlow()
+
+    /**
+     * 正在流式接收的思考过程，按节点分。
+     *
+     * ## 为什么需要它（而不是只靠落库）
+     * 思考内容是在回答**之前**流式到达的。若只在流结束才写库，
+     * 用户在整个思考阶段会看到界面上毫无反应 —— 而这恰恰是
+     * "开了思考却没反应"这一误解的来源。
+     * 用一个 per-node 的实时状态让界面能边收边显示，
+     * 结束后再落到 `ChatMessage.reasoningContent` 保存下来。
+     */
+    private val _streamingReasoning = MutableStateFlow<Map<String, String>>(emptyMap())
+    val streamingReasoning: StateFlow<Map<String, String>> = _streamingReasoning.asStateFlow()
+
+    private val activeJobs = mutableMapOf<String, Job>()
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            // 确保至少存在一个会话
+            val existing = folderDao.observeAllConversations().first()
+            val conversation = existing.firstOrNull()
+                ?: createConversationInternal(
+                    folderId = null,
+                    title = "主干对话",
+                    sourceOrigin = "首次启动自动创建",
+                    seedWelcome = true
+                )
+            openConversationInternal(conversation.id)
+        }
+    }
+
+    /**
+     * 解析消息里存的图片 JSON（data URI 数组）。
+     *
+     * 解析失败一律当作"没有图片"：图片是附加信息，
+     * 一段坏 JSON 不该让整轮对话发不出去。
+     */
+    private fun decodeImages(imagesJson: String?): List<String> {
+        if (imagesJson.isNullOrBlank()) return emptyList()
+        return runCatching {
+            val type = object : com.google.gson.reflect.TypeToken<List<String>>() {}.type
+            gson.fromJson<List<String>>(imagesJson, type) ?: emptyList()
+        }.getOrDefault(emptyList())
+    }
+
+    /** 把图片列表编码成入库用的 JSON。空列表存 null，避免库里出现无意义的 `[]`。 */
+    private fun encodeImages(images: List<String>): String? =
+        if (images.isEmpty()) null else gson.toJson(images)
+
+    // ========================================================================
+    // 本地知识库（教材 RAG）
+    // ========================================================================
+
+    /** 知识库文档列表，供管理界面订阅。 */
+    val knowledgeDocuments: StateFlow<List<KnowledgeDocument>> =
+        knowledgeDao.observeDocuments().stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    private val _knowledgeBusy = MutableStateFlow(false)
+
+    /** 是否正在导入（解析 + 建索引可能耗时数十秒，界面需要转圈并禁用按钮）。 */
+    val knowledgeBusy: StateFlow<Boolean> = _knowledgeBusy.asStateFlow()
+
+    private val _knowledgeMessage = MutableStateFlow<String?>(null)
+
+    /** 最近一次导入/删除的结果提示，供界面用 Snackbar 或文字展示。 */
+    val knowledgeMessage: StateFlow<String?> = _knowledgeMessage.asStateFlow()
+
+    fun clearKnowledgeMessage() {
+        _knowledgeMessage.value = null
+    }
+
+    /**
+     * 导入一份文档：解析 → 切块 → 建 2 字组索引 → 整份入库。
+     *
+     * ## 为什么整条流水线必须在 Dispatchers.IO
+     * 解析要读整个文件（教材可达数 MB），切块与建索引是**纯 CPU 计算**
+     * （几 MB 文本会产生数十万个 2 字组）。放在主线程会直接 ANR ——
+     * 这是交接文档里明确标注过的风险点。
+     *
+     * ## 为什么失败不抛异常而是给提示
+     * 用户会导入各种格式（旧 .doc、扫描版 PDF、加密 docx），
+     * 这些失败是可预期的。直接把异常抛到界面上只会显示一串看不懂的堆栈，
+     * 所以这里转成可读文案。
+     */
+    fun importKnowledgeDocument(
+        uri: android.net.Uri,
+        displayName: String,
+        folderPath: String = ""
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _knowledgeBusy.value = true
+            _knowledgeMessage.value = null
+            try {
+                val parsed = DocumentParser.parse(getApplication(), uri, displayName)
+
+                if (parsed.text.isBlank()) {
+                    _knowledgeMessage.value = "「$displayName」解析后没有文字内容（可能是扫描版或空文档）"
+                    return@launch
+                }
+
+                val title = displayName.substringBeforeLast('.').ifBlank { displayName }
+                val docId = java.util.UUID.randomUUID().toString()
+                // 默认导入不切片建立索引（任务 B3），实现毫秒级快速导入
+                val doc = KnowledgeDocument(
+                    id = docId,
+                    title = title,
+                    fileName = displayName,
+                    sourceType = parsed.sourceType,
+                    charCount = parsed.text.length,
+                    chunkCount = 0,
+                    folderPath = folderPath.trim('/')
+                )
+                knowledgeDao.insertDocument(doc)
+                _knowledgeMessage.value = "已导入「$title」（未索引，可按需手动构建切片）"
+            } catch (e: DocumentParser.UnsupportedFormatException) {
+                _knowledgeMessage.value = e.message ?: "不支持的文件格式"
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // 兜底：不让任何解析/入库异常把应用带崩
+                _knowledgeMessage.value =
+                    "导入失败：${e.javaClass.simpleName} ${e.localizedMessage.orEmpty()}".trim()
+            } finally {
+                _knowledgeBusy.value = false
+            }
+        }
+    }
+
+    /**
+     * 把一段**已经解析好的正文**直接入库并建立索引。
+     *
+     * 为什么需要它：阅读器在导入时已经把文件解析过一遍（扫描件还做过整本离线 OCR），
+     * 再按 URI 让知识库重解析一次等于白跑第二遍 OCR。这里直接收正文，
+     * 解析与索引两步分开，各自只做一次。
+     */
+    fun importKnowledgeText(
+        title: String,
+        fileName: String,
+        text: String,
+        sourceType: String,
+        folderPath: String = ""
+    ) {
+        if (text.isBlank()) {
+            _knowledgeMessage.value = "「$title」没有可入库的正文"
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val docId = java.util.UUID.randomUUID().toString()
+            try {
+                knowledgeDao.insertDocument(
+                    KnowledgeDocument(
+                        id = docId,
+                        title = title,
+                        fileName = fileName,
+                        sourceType = sourceType,
+                        charCount = text.length,
+                        chunkCount = 0,
+                        folderPath = folderPath.trim('/')
+                    )
+                )
+            } catch (e: Exception) {
+                _knowledgeMessage.value =
+                    "入库失败：${e.javaClass.simpleName} ${e.localizedMessage.orEmpty()}".trim()
+                return@launch
+            }
+            // 复用与「手动构建索引」完全相同的那条流水线（本地 2-gram 倒排 / 云端向量）。
+            buildDocumentIndex(docId, text, title)
+        }
+    }
+
+    /**
+     * 「书架」统一导入：把一份已经解析好的文档**同时**写进两处，两者共用同一个 id。
+     *
+     * - Room 的 `knowledge_documents`（RAG 检索的唯一真相）：检索只认它；
+     * - 阅读状态由调用方（书架界面）用同一个 id 写进 ReaderDocumentPool（正文/页码/OCR 状态）。
+     *
+     * 为什么不让内部自己生成 id：阅读侧与检索侧必须对齐同一个 id 才可能"一处导入、两处可见"。
+     * 旧实现里阅读器卡片走 [importKnowledgeText] 会另起一个随机 UUID，于是同一本书在
+     * Room 与阅读池里是两个 id，互相看不见 —— 这正是"两个池子不互通"的根因。
+     *
+     * 导入即建索引（[buildDocumentIndex]），因此导入后立即可被检索命中；若只想登记不建索引，
+     * 传 `indexNow = false`。
+     */
+    fun importShelfDocument(
+        documentId: String,
+        title: String,
+        fileName: String,
+        sourceType: String,
+        text: String,
+        folderPath: String = "",
+        indexNow: Boolean = true,
+        scheme: RagIndexingScheme? = null
+    ) {
+        if (text.isBlank()) {
+            _knowledgeMessage.value = "「$title」没有可入库的正文"
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                knowledgeDao.insertDocument(
+                    KnowledgeDocument(
+                        id = documentId,
+                        title = title,
+                        fileName = fileName,
+                        sourceType = sourceType,
+                        charCount = text.length,
+                        chunkCount = 0,
+                        folderPath = folderPath.trim('/')
+                    )
+                )
+            } catch (e: Exception) {
+                _knowledgeMessage.value =
+                    "入库失败：${e.javaClass.simpleName} ${e.localizedMessage.orEmpty()}".trim()
+                return@launch
+            }
+            if (indexNow) buildDocumentIndex(documentId, text, title, scheme)
+        }
+    }
+
+    /**
+     * 为一份「只有阅读状态、Room 里还没有对应行」的旧书记录补建 Room 文档行（id 相同）。
+     *
+     * 数据安全：这是老版本 `reader_document_pool` 里遗留的书能被"书架"看见且不丢失的关键。
+     * **先查后插**，绝不 REPLACE 覆盖已有行 —— `insertDocument` 是 `INSERT OR REPLACE`，
+     * 覆盖已有行会触发 SQLite 先删旧行，进而级联删掉该书的 chunks / grams（索引全丢）。
+     *
+     * 只补建元信息（chunkCount = 0，未建索引），不自动切块：旧书的正文可能非常大，
+     * 静默建索引会让切页/重启卡住；用户需要时在书架卡片菜单里手动「接入知识库」即可。
+     */
+    suspend fun ensureShelfRoomDocument(
+        documentId: String,
+        title: String,
+        fileName: String,
+        sourceType: String,
+        charCount: Int
+    ) = withContext(Dispatchers.IO) {
+        runCatching {
+            if (knowledgeDao.getDocument(documentId) == null) {
+                knowledgeDao.insertDocument(
+                    KnowledgeDocument(
+                        id = documentId,
+                        title = title,
+                        fileName = fileName,
+                        sourceType = sourceType,
+                        charCount = charCount,
+                        chunkCount = 0
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * 书架卡片「接入 / 重建知识库索引（选方案）」的落地入口。
+     *
+     * 与 [rebuildDocumentIndex] 的差别：书架**手上就有阅读正文**（ReaderDocument.sampleText），
+     * 没有切片也能建索引。因此：
+     *  - 有正文：先清旧索引（保留文档本身），再按所选方案重建；
+     *  - 没正文（例如从旧知识库设置页导入、已无本地文件的书）：退回用库里已有切片拼回正文重建。
+     */
+    fun indexShelfDocument(
+        documentId: String,
+        text: String?,
+        title: String? = null,
+        scheme: RagIndexingScheme? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (text.isNullOrBlank()) {
+                rebuildDocumentIndex(documentId, scheme ?: RagIndexingScheme.LOCAL_OFFLINE, title)
+                return@launch
+            }
+            _knowledgeBusy.value = true
+            _knowledgeMessage.value = "正在清除该文档的旧索引..."
+            val cleared = runCatching { knowledgeDao.safeClearDocumentIndex(documentId) }
+            _knowledgeBusy.value = false
+            if (cleared.isFailure) {
+                _knowledgeMessage.value =
+                    "清除旧索引失败：${cleared.exceptionOrNull()?.localizedMessage.orEmpty()}".trim()
+                return@launch
+            }
+            buildDocumentIndex(documentId, text, title, scheme)
+        }
+    }
+
+    /**
+     * 手动触发文档切片索引构建（双方案支持：本地 2-gram 倒排 或 云端 Embedding 向量）。
+     *
+     * [scheme] 是**这一份文档**显式指定的索引方案：
+     *  - 传 `null`（默认）时完全沿用全局设置（含全局“云端 RAG 开关”），既有调用点行为不变；
+     *  - 传非 null 时以用户为该文档的选择为准；若选的是云端方案而云端配置不合法，
+     *    会如实报错并终止，**绝不静默退回本地**。
+     */
+    fun buildDocumentIndex(
+        documentId: String,
+        text: String,
+        title: String? = null,
+        scheme: RagIndexingScheme? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _knowledgeBusy.value = true
+            _knowledgeMessage.value = "正在切片..."
+            // 登记为后台任务：切片/向量/倒排都可能跑几十秒，用户切走后还能调出面板看进度
+            val taskId = BackgroundTaskRegistry.start(
+                title = "切片建索引${if (title.isNullOrBlank()) "" else "：《$title》"}",
+                detail = "正在切片…"
+            )
+            try {
+                val cloudConfig = settings.cloudRagConfig()
+                val effectiveScheme = scheme ?: cloudConfig.scheme
+                val wantsCloudVectors =
+                    effectiveScheme == RagIndexingScheme.CLOUD_EMBEDDING ||
+                        effectiveScheme == RagIndexingScheme.HYBRID
+
+                // 显式选择云端方案但云端配置不合法：如实报错并终止，不放行也不退回本地
+                val explicitCloudIssue =
+                    if (scheme != null) cloudSchemeIssue(effectiveScheme, cloudConfig) else null
+                if (explicitCloudIssue != null) {
+                    _knowledgeMessage.value = explicitCloudIssue
+                    BackgroundTaskRegistry.fail(taskId, explicitCloudIssue)
+                    return@launch
+                }
+
+                // 显式指定方案时以用户选择为准（不再受全局云端开关影响）；
+                // 未指定时沿用既有全局判定：全局开关 + 云端方案 + 配置合法。
+                val isCloudMode =
+                    if (scheme != null) wantsCloudVectors
+                    else cloudConfig.enabled && wantsCloudVectors && cloudConfig.isValidForApi()
+
+                val chunks = Chunker.chunk(documentId, text)
+                if (chunks.isEmpty()) {
+                    _knowledgeMessage.value = "文档切块结果为空"
+                    BackgroundTaskRegistry.finish(taskId, BackgroundTaskRegistry.State.FAILED, "切块结果为空")
+                    return@launch
+                }
+                BackgroundTaskRegistry.update(
+                    taskId,
+                    detail = "已切成 ${chunks.size} 段，准备建索引…",
+                    progress = 0.3f
+                )
+
+                val finalChunks = if (isCloudMode) {
+                    _knowledgeMessage.value = "正在请求云端 API 厂商批量生成向量 Embedding (${chunks.size} 块)..."
+                    BackgroundTaskRegistry.update(taskId, "正在向云端请求向量 Embedding（${chunks.size} 块）…", 0.5f)
+                    val textsToEmbed = chunks.map { it.text }
+                    val vectors = cloudEmbeddingClient.getEmbeddings(textsToEmbed, cloudConfig)
+                    chunks.mapIndexed { index, chunk ->
+                        val vec = vectors.getOrNull(index)
+                        if (vec != null && vec.isNotEmpty()) {
+                            chunk.copy(embedding = com.treechat.workbench.rag.CloudEmbeddingClient.encodeVector(vec))
+                        } else {
+                            chunk
+                        }
+                    }
+                } else {
+                    chunks
+                }
+
+                _knowledgeMessage.value = "正在构建本地 2-gram 倒排索引并落库..."
+                BackgroundTaskRegistry.update(taskId, "正在建 2-gram 倒排索引并落库…", 0.75f)
+                // 先落方案标识再写切片：紧随其后的 DAO 写库会触发 Room 失效通知，
+                // 界面重查文档列表时就带上新方案，卡片徽标不会停留在旧值。
+                // 记录"实际用到的方案"：没走云端向量时就如实记本地，不冒充云端。
+                val recordedScheme =
+                    if (isCloudMode) effectiveScheme else RagIndexingScheme.LOCAL_OFFLINE
+                updateDocumentIndexingScheme(documentId, recordedScheme)
+                val grams = Chunker.buildIndex(documentId, finalChunks)
+                knowledgeDao.insertChunks(finalChunks)
+                knowledgeDao.insertGrams(grams)
+                knowledgeDao.updateDocumentChunkCount(documentId, finalChunks.size)
+
+                val schemeName = when {
+                    isCloudMode && effectiveScheme == RagIndexingScheme.HYBRID ->
+                        "云端向量 + 本地 2-gram 双路混合"
+                    isCloudMode -> "云端向量 + 本地双索引"
+                    else -> "纯本地 2-gram 倒排索引"
+                }
+                _knowledgeMessage.value = "索引构建完成 ($schemeName)：生成 ${finalChunks.size} 个切片段落"
+                BackgroundTaskRegistry.finish(
+                    taskId,
+                    BackgroundTaskRegistry.State.DONE,
+                    "$schemeName · ${finalChunks.size} 段切片"
+                )
+            } catch (e: Exception) {
+                _knowledgeMessage.value = "构建索引失败: ${e.message}"
+                BackgroundTaskRegistry.fail(taskId, e.localizedMessage ?: e.javaClass.simpleName)
+            } finally {
+                _knowledgeBusy.value = false
+            }
+        }
+    }
+
+    /**
+     * 按指定方案**重建**某份文档的切片索引（逐份文档选择方案的落地入口）。
+     *
+     * 顺序：先校验方案（云端配置不合法则如实报错、**不动**旧数据）→ 取库里已有切片文本拼回正文
+     * → 清旧索引（复用 [com.treechat.workbench.data.db.KnowledgeDao.safeClearDocumentIndex]，
+     * 只清切片与倒排，保留文档记录本身）→ 复用 [buildDocumentIndex] 按所选方案重建。
+     *
+     * 为什么文本要用已有切片拼回：入口在管理界面，此处并不持有原文；切片里存的就是当初入库的
+     * 正文，拼回即可近似还原。若库里没有任何切片，则如实提示，绝不拿空串去建索引。
+     */
+    fun rebuildDocumentIndex(
+        documentId: String,
+        scheme: RagIndexingScheme,
+        title: String? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // 1. 前置校验：配置不合法时不清理旧索引，直接如实报错（保护已有数据）
+            val cloudIssue = cloudSchemeIssue(scheme, settings.cloudRagConfig())
+            if (cloudIssue != null) {
+                _knowledgeMessage.value = cloudIssue
+                return@launch
+            }
+
+            // 2. 取重建正文：优先用库里已有切片文本拼回
+            val existingChunks = runCatching { knowledgeDao.getChunksForDocument(documentId) }
+                .getOrDefault(emptyList())
+            val rebuiltText = existingChunks.joinToString("\n\n") { it.text }
+            if (rebuiltText.isBlank()) {
+                _knowledgeMessage.value =
+                    "该文档还没有正文可重建索引（库里没有切片，原文不单独留存）；请重新导入该文档后再建索引"
+                return@launch
+            }
+
+            // 3. 先清旧索引（保留文档本身，不删书）
+            _knowledgeBusy.value = true
+            _knowledgeMessage.value = "正在清除该文档的旧索引..."
+            try {
+                knowledgeDao.safeClearDocumentIndex(documentId)
+            } catch (e: Exception) {
+                _knowledgeMessage.value = "清除旧索引失败：${e.localizedMessage.orEmpty()}".trim()
+                _knowledgeBusy.value = false
+                return@launch
+            }
+
+            // 4. 按所选方案重建（busy 的收尾交给 buildDocumentIndex 的 finally）
+            buildDocumentIndex(documentId, rebuiltText, title, scheme)
+        }
+    }
+
+    /**
+     * 云端方案配置校验：返回 null 表示可用；否则返回面向用户的不可用原因。
+     * 纯本地方案不依赖云端配置，恒返回 null。
+     */
+    private fun cloudSchemeIssue(
+        scheme: RagIndexingScheme,
+        config: com.treechat.workbench.rag.CloudRagConfig
+    ): String? {
+        val wantsCloudVectors =
+            scheme == RagIndexingScheme.CLOUD_EMBEDDING || scheme == RagIndexingScheme.HYBRID
+        if (!wantsCloudVectors) return null
+        if (!config.isValidForApi()) {
+            return "云端方案需要先填写 API 地址与密钥（缺少 Base URL / API Key / Embedding 模型）"
+        }
+        return null
+    }
+
+    /**
+     * 原地写入某份文档的索引方案标识（对应实体已有的 [KnowledgeDocument.indexingScheme] 列）。
+     *
+     * 为什么不走 DAO：知识库 DAO 没有“只更这一列”的方法，而 `insertDocument` 是
+     * `INSERT OR REPLACE` —— 用它重插 documents 行会让 SQLite 先删旧行，进而触发
+     * chunks / grams 的 `ON DELETE CASCADE`，把刚建好的索引连带删掉。
+     * 这里用最窄的一条 UPDATE 只改这一列，不新建列、不改 Room 实体、不加迁移。
+     */
+    private suspend fun updateDocumentIndexingScheme(documentId: String, scheme: RagIndexingScheme) {
+        runCatching {
+            db.openHelper.writableDatabase.execSQL(
+                "UPDATE knowledge_documents SET indexingScheme = ? WHERE id = ?",
+                arrayOf<Any?>(scheme.name, documentId)
+            )
+        }
+    }
+
+    /**
+     * 删除文档的切片索引（优化为 safeClearDocumentIndex 极速清理并给予明确反馈）
+     */
+    fun deleteDocumentIndex(documentId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _knowledgeBusy.value = true
+            try {
+                knowledgeDao.safeClearDocumentIndex(documentId)
+                _knowledgeMessage.value = "已成功清除该文档的切片索引"
+            } catch (e: Exception) {
+                _knowledgeMessage.value = "删除索引失败: ${e.message}"
+            } finally {
+                _knowledgeBusy.value = false
+            }
+        }
+    }
+
+    /**
+     * 删除单段切片及其倒排索引项。
+     * 索引项必须同步删除，否则检索会命中正文已不存在的 2-gram 记录。
+     */
+    fun deleteChunk(chunkId: String, documentId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                knowledgeDao.safeDeleteChunk(chunkId, documentId)
+                val left = knowledgeDao.getChunksForDocument(documentId).size
+                _knowledgeMessage.value = "已删除 1 段切片，该文档剩余 $left 段"
+            } catch (e: Exception) {
+                _knowledgeMessage.value = "删除切片失败：${e.localizedMessage.orEmpty()}".trim()
+            }
+        }
+    }
+
+    /**
+     * 从 content:// URI 取用户可见的文件名。
+     *
+     * 为什么需要它：`ActivityResultContracts` 回传的 URI 路径形如
+     * `content://com.android.providers.downloads.documents/document/1234`，
+     * 末段是内部 ID，**不能当文件名用**（否则用户会看到"已导入 1234"）。
+     * 必须查 ContentResolver 的 `OpenableColumns.DISPLAY_NAME`。
+     *
+     * 查不到时回退到 URI 末段，至少还能显示出一点线索。
+     */
+    fun resolveDisplayName(uri: android.net.Uri): String {
+        val fromResolver = runCatching {
+            getApplication<android.app.Application>().contentResolver
+                .query(uri, null, null, null, null)?.use { cursor ->
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+                }
+        }.getOrNull()
+        if (!fromResolver.isNullOrBlank()) return fromResolver
+        return uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() } ?: "未命名文档"
+    }
+
+    /** 删除一份文档（优化为 safeDeleteDocument 极速事务，并在界面提示操作结果）。 */
+    fun deleteKnowledgeDocument(documentId: String, title: String? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _knowledgeBusy.value = true
+            try {
+                val docTitle = title ?: knowledgeDao.getDocumentById(documentId)?.title ?: "文档"
+                knowledgeDao.safeDeleteDocument(documentId)
+                _knowledgeMessage.value = "已成功删除《$docTitle》"
+            } catch (e: Exception) {
+                _knowledgeMessage.value = "删除失败: ${e.localizedMessage.orEmpty()}"
+            } finally {
+                _knowledgeBusy.value = false
+            }
+        }
+    }
+
+    /** 启用/停用一份文档（停用后不参与检索，但数据保留）。 */
+    fun setKnowledgeDocumentEnabled(documentId: String, enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { knowledgeDao.setDocumentEnabled(documentId, enabled) }
+        }
+    }
+
+    /** 移动知识库文档到指定文件夹路径。 */
+    fun moveKnowledgeDocument(documentId: String, targetFolderPath: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { knowledgeDao.setDocumentFolderPath(documentId, targetFolderPath.trim('/')) }
+        }
+    }
+
+    /** 重命名知识库文档标题。 */
+    fun renameKnowledgeDocument(documentId: String, newTitle: String) {
+        val trimmed = newTitle.trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { knowledgeDao.renameDocument(documentId, trimmed) }
+        }
+    }
+
+    /** 批量启用/停用某个知识库文件夹（及其子目录）下的所有文档。 */
+    fun setKnowledgeFolderEnabled(folderPath: String, enabled: Boolean) {
+        val clean = folderPath.trim('/')
+        if (clean.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                knowledgeDao.setFolderDocumentsEnabled(clean, "$clean/%", enabled)
+            }
+        }
+    }
+
+    /** 读取指定知识库文档的全部原文切片（供切片浏览器预览与页内搜索）。 */
+    suspend fun getKnowledgeDocumentChunks(documentId: String): List<com.treechat.workbench.data.model.KnowledgeChunk> =
+        withContext(Dispatchers.IO) {
+            runCatching { knowledgeDao.getChunksForDocument(documentId) }.getOrDefault(emptyList())
+        }
+
+    // ========================================================================
+    // 会话与文件夹操作
+    // ========================================================================
+
+    fun openConversation(conversationId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            openConversationInternal(conversationId)
+        }
+    }
+
+    private suspend fun openConversationInternal(conversationId: String) {
+        _activeConversationId.value = conversationId
+        // 先清空根节点，再异步加载新的。
+        // 否则切换会话的瞬间，聊天视图会先用旧会话的 rootNodeId 渲染一帧 ——
+        // 表现为"点进新对话，闪了一下上一个对话的内容"。
+        _rootNodeId.value = null
+
+        var root = dao.getRootNodeForConversation(conversationId)
+        if (root == null) {
+            // 容错：会话存在但根节点缺失（例如被误删）时补一个，避免聊天页空白
+            val conv = folderDao.getConversationById(conversationId)
+            root = ConversationNode(
+                conversationId = conversationId,
+                parentId = null,
+                title = conv?.title ?: "主对话"
+            )
+            dao.insertNode(root)
+        }
+        _rootNodeId.value = root.id
+
+        // 兜底复位：如果上一次运行是"正在生成时被系统杀掉/强退"，
+        // 库里那条 assistant 消息的 is_streaming 会永久留在 1，
+        // 于是重新打开这个会话时它一直显示"生成中"，且没有任何协程会去清它。
+        // 这里在打开会话时把这些残留标记清掉。
+        resetStaleStreamingFlags(conversationId)
+    }
+
+    /** 清掉会话内遗留的"生成中"标记（进程被杀留下的僵尸状态）。 */
+    private suspend fun resetStaleStreamingFlags(conversationId: String) {
+        runCatching {
+            val conversationNodes = dao.getNodesForConversation(conversationId)
+            conversationNodes.forEach { node ->
+                val messages = dao.getMessagesForNode(node.id)
+                messages.filter { it.isStreaming }.forEach { stale ->
+                    dao.updateMessage(stale.copy(isStreaming = false))
+                }
+            }
+        }
+    }
+
+    fun createConversation(folderId: String?, title: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val conv = createConversationInternal(
+                folderId = folderId,
+                title = title.ifBlank { "新对话" },
+                sourceOrigin = "手动创建",
+                seedWelcome = false
+            )
+            openConversationInternal(conv.id)
+        }
+    }
+
+    private suspend fun createConversationInternal(
+        folderId: String?,
+        title: String,
+        sourceOrigin: String?,
+        seedWelcome: Boolean
+    ): Conversation {
+        val conversation = Conversation(
+            folderId = folderId,
+            title = title,
+            sourceOrigin = sourceOrigin
+        )
+        folderDao.insertConversation(conversation)
+        val root = ConversationNode(
+            conversationId = conversation.id,
+            parentId = null,
+            title = title
+        )
+        dao.insertNode(root)
+
+        if (seedWelcome) {
+            dao.insertMessage(
+                ChatMessage(
+                    nodeId = root.id,
+                    role = "assistant",
+                    content = WELCOME_MARKDOWN
+                )
+            )
+        }
+        return conversation
+    }
+
+    fun renameConversation(conversationId: String, newTitle: String) {
+        if (newTitle.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val conv = folderDao.getConversationById(conversationId) ?: return@launch
+            folderDao.updateConversation(conv.copy(title = newTitle.trim()))
+        }
+    }
+
+    fun deleteConversation(conversationId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // 会话与节点之间没有外键，级联要显式做：
+            // 先删节点（消息随节点外键级联），再删会话本身
+            dao.deleteNodesByConversation(conversationId)
+            folderDao.deleteConversationById(conversationId)
+
+            // 删掉的正好是当前会话时，切到列表里的下一个
+            if (_activeConversationId.value == conversationId) {
+                val remaining = folderDao.observeAllConversations().first()
+                val next = remaining.firstOrNull()
+                    ?: createConversationInternal(
+                        folderId = null,
+                        title = "主干对话",
+                        sourceOrigin = "自动重建",
+                        seedWelcome = false
+                    )
+                openConversationInternal(next.id)
+            }
+        }
+    }
+
+    fun createFolder(parentFolderId: String?, name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            folderDao.insertFolder(
+                Folder(parentFolderId = parentFolderId, name = name.trim())
+            )
+        }
+    }
+
+    fun renameFolder(folderId: String, newName: String) {
+        if (newName.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val folder = folderDao.getFolderById(folderId) ?: return@launch
+            folderDao.updateFolder(folder.copy(name = newName.trim()))
+        }
+    }
+
+    fun deleteFolder(folderId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // 子文件夹靠自引用外键 CASCADE 一起走；
+            // 文件夹里的对话靠外键 SET_NULL 回到根目录，不会被误删。
+            folderDao.deleteFolderById(folderId)
+        }
+    }
+
+    fun moveConversation(conversationId: String, targetFolderId: String?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            folderDao.moveConversationToFolder(conversationId, targetFolderId)
+        }
+    }
+
+    /**
+     * 复制对话副本（任务 B8：支持整棵对话树与全部节点/消息的深拷贝）
+     */
+    fun duplicateConversation(conversationId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val origin = folderDao.getConversationById(conversationId) ?: return@launch
+            val newId = java.util.UUID.randomUUID().toString()
+            val now = System.currentTimeMillis()
+            val newConv = origin.copy(
+                id = newId,
+                title = "${origin.title} (副本)",
+                createdAt = now,
+                updatedAt = now
+            )
+            folderDao.insertConversation(newConv)
+
+            val originNodes = dao.getNodesForConversation(conversationId)
+            val idMap = mutableMapOf<String, String>()
+            originNodes.forEach { oldNode ->
+                idMap[oldNode.id] = java.util.UUID.randomUUID().toString()
+            }
+            originNodes.forEach { oldNode ->
+                val newNodeId = idMap[oldNode.id] ?: return@forEach
+                val newParentId = oldNode.parentId?.let { idMap[it] }
+                val clonedNode = oldNode.copy(
+                    id = newNodeId,
+                    conversationId = newId,
+                    parentId = newParentId,
+                    createdAt = now
+                )
+                dao.insertNode(clonedNode)
+
+                val msgs = dao.getMessagesForNode(oldNode.id)
+                msgs.forEach { m ->
+                    val clonedMsg = m.copy(
+                        id = java.util.UUID.randomUUID().toString(),
+                        nodeId = newNodeId,
+                        createdAt = now
+                    )
+                    dao.insertMessage(clonedMsg)
+                }
+            }
+        }
+    }
+
+    /**
+     * 导入 .talktree 跨平台对话档案。
+     * 重新分配 UUID 并保留完整的父子拓扑树关系与各节点消息记录。
+     */
+    fun importTalkTreeBundle(
+        bundle: com.treechat.workbench.export.TalkTreeBundle,
+        targetFolderId: String?,
+        onComplete: (newConvId: String) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newConvId = java.util.UUID.randomUUID().toString()
+            val now = System.currentTimeMillis()
+            val importedConv = bundle.conversation.copy(
+                id = newConvId,
+                folderId = targetFolderId,
+                title = bundle.conversation.title.ifBlank { "已导入对话" },
+                sourceOrigin = "来自 .talktree 档案导入",
+                createdAt = now,
+                updatedAt = now
+            )
+            folderDao.insertConversation(importedConv)
+
+            val idMap = mutableMapOf<String, String>()
+            bundle.nodes.forEach { oldNode ->
+                idMap[oldNode.id] = java.util.UUID.randomUUID().toString()
+            }
+
+            bundle.nodes.forEach { oldNode ->
+                val newNodeId = idMap[oldNode.id] ?: java.util.UUID.randomUUID().toString()
+                val newParentId = oldNode.parentId?.let { idMap[it] }
+                val newNode = oldNode.copy(
+                    id = newNodeId,
+                    conversationId = newConvId,
+                    parentId = newParentId,
+                    createdAt = oldNode.createdAt
+                )
+                dao.insertNode(newNode)
+            }
+
+            bundle.messages.forEach { oldMsg ->
+                val targetNodeId = idMap[oldMsg.nodeId] ?: return@forEach
+                val newMsg = oldMsg.copy(
+                    id = java.util.UUID.randomUUID().toString(),
+                    nodeId = targetNodeId
+                )
+                dao.insertMessage(newMsg)
+            }
+
+            withContext(Dispatchers.Main) {
+                onComplete(newConvId)
+            }
+        }
+    }
+
+    /**
+     * 移动文件夹，附带环检测。
+     *
+     * 把文件夹拖进自己的子孙里会造成环，届时路径计算会无限递归。
+     * 这里显式拒绝，而不是等它崩。
+     */
+    fun moveFolder(folderId: String, targetParentId: String?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (targetParentId == folderId) return@launch
+            if (targetParentId != null && isDescendant(targetParentId, folderId)) return@launch
+            folderDao.moveFolder(folderId, targetParentId)
+        }
+    }
+
+    /** 切换文件夹的置顶状态。 */
+    fun toggleFolderPinned(folderId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val folder = folderDao.getFolderById(folderId) ?: return@launch
+            folderDao.updateFolder(folder.copy(isPinned = !folder.isPinned))
+        }
+    }
+
+    /** 切换文件夹的收藏状态。 */
+    fun toggleFolderFavorite(folderId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val folder = folderDao.getFolderById(folderId) ?: return@launch
+            folderDao.updateFolder(folder.copy(isFavorite = !folder.isFavorite))
+        }
+    }
+
+    /** 切换对话的置顶状态。 */
+    fun toggleConversationPinned(conversationId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val conv = folderDao.getConversationById(conversationId) ?: return@launch
+            folderDao.updateConversation(conv.copy(isPinned = !conv.isPinned))
+        }
+    }
+
+    /** 切换对话的收藏状态。 */
+    fun toggleConversationFavorite(conversationId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val conv = folderDao.getConversationById(conversationId) ?: return@launch
+            folderDao.updateConversation(conv.copy(isFavorite = !conv.isFavorite))
+        }
+    }
+
+    /** targetId 是否位于 ancestorId 的子树中。 */
+    private suspend fun isDescendant(targetId: String, ancestorId: String): Boolean {
+        val all = folderDao.getAllFolders().associateBy { it.id }
+        var cursor = all[targetId]
+        var guard = 0
+        while (cursor != null && guard++ < 512) {
+            if (cursor.parentFolderId == ancestorId) return true
+            cursor = cursor.parentFolderId?.let { all[it] }
+        }
+        return false
+    }
+
+    // ========================================================================
+    // 词典模块：单词本收藏 + 例句
+    // ========================================================================
+
+    /** 单词本收藏（按加入时间倒序），供词典收藏夹视图订阅。 */
+    val wordFavorites: StateFlow<List<WordFavorite>> =
+        wordDao.observeFavorites().stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    /**
+     * 收藏一个词（幂等）。
+     *
+     * 主键用 `kind:word` 的确定性写法（见 [WordFavorite.keyOf]），
+     * 同一个词重复点收藏只会覆盖那一条，不会插出第二条 ——
+     * 因此这里不需要先查再插。
+     */
+    fun addWordFavorite(
+        word: String,
+        kind: WordKind,
+        pinyin: String? = null,
+        ipa: String? = null,
+        gloss: String? = null
+    ) {
+        val clean = word.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            wordDao.upsertFavorite(
+                WordFavorite(
+                    id = WordFavorite.keyOf(clean, kind),
+                    word = clean,
+                    kind = kind.name,
+                    pinyin = pinyin,
+                    ipa = ipa,
+                    gloss = gloss
+                )
+            )
+        }
+    }
+
+    fun removeWordFavorite(word: String, kind: WordKind) {
+        viewModelScope.launch(Dispatchers.IO) {
+            wordDao.deleteFavorite(word.trim(), kind.name)
+        }
+    }
+
+    /** 某个词当前是否已收藏（收藏按钮据此显示「已收藏 / 收藏」）。 */
+    suspend fun isWordFavorite(word: String, kind: WordKind): Boolean = withContext(Dispatchers.IO) {
+        wordDao.getFavorite(word.trim(), kind.name) != null
+    }
+
+    /** 某个词的全部例句（按生成时间升序）。 */
+    fun observeWordExamples(word: String): Flow<List<WordExample>> =
+        wordDao.observeExamples(word.trim())
+
+    /**
+     * 追加一条例句。
+     *
+     * 与收藏的覆盖语义相反，这里是**追加**：主键是随机 UUID，
+     * 同一个词反复生成就会累积多条，用户在列表里可以逐条删除。
+     */
+    fun addWordExample(word: String, text: String, translation: String) {
+        val cleanWord = word.trim()
+        val cleanText = text.trim()
+        if (cleanWord.isEmpty() || cleanText.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            wordDao.insertExample(
+                WordExample(
+                    word = cleanWord,
+                    text = cleanText,
+                    translation = translation.trim()
+                )
+            )
+        }
+    }
+
+    fun deleteWordExample(exampleId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            wordDao.deleteExample(exampleId)
+        }
+    }
+
+    /**
+     * 生成一条例句。
+     *
+     * 走与对话完全相同的通路（[aiClient.runChat]），因此当前选中的服务商
+     * 是本地 NPU 离线模型时也会自动路由到端侧引擎，不需要另配一套。
+     * 联网检索刻意关掉：让模型写一句例句不该先搜一遍网，那是浪费。
+     *
+     * @return 成功时给出 (例句, 中文翻译)；失败给出可读异常。
+     */
+    suspend fun generateWordExample(word: String, kind: WordKind): Result<Pair<String, String>> =
+        withContext(Dispatchers.IO) {
+            val clean = word.trim()
+            if (clean.isEmpty()) {
+                return@withContext Result.failure(IllegalArgumentException("请先输入要造句的词"))
+            }
+            val provider = activeProvider
+            if (provider.apiKey.isBlank()) {
+                return@withContext Result.failure(
+                    IllegalStateException("尚未配置 API 密钥，无法生成例句")
+                )
+            }
+            val systemPrompt =
+                "你是词典例句编写助手。只输出一行例句与一行中文翻译，两者之间用 ||| 分隔；" +
+                    "不要解释、不要编号、不要加引号。"
+            val userPrompt = when (kind) {
+                WordKind.EN -> "用英语单词「$clean」写一个地道的英语例句，并给出对应的中文翻译。"
+                WordKind.RU -> "用俄语单词「$clean」写一个地道的俄语例句，并给出对应的中文翻译。"
+                WordKind.HANZI -> "用汉字「$clean」写一个简洁的现代汉语例句，并给出对应的英文翻译。"
+            }
+
+            val builder = StringBuilder()
+            try {
+                aiClient.runChat(
+                    provider = provider,
+                    messages = listOf(PromptMessage(role = "user", content = userPrompt)),
+                    systemPrompt = systemPrompt,
+                    searchConfig = settings.searchConfig().copy(enabled = false)
+                ).collect { event ->
+                    when (event) {
+                        is ChatEvent.Text -> builder.append(event.delta)
+                        is ChatEvent.Failed -> throw IllegalStateException(event.message)
+                        else -> Unit
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@withContext Result.failure(
+                    IllegalStateException(e.localizedMessage ?: "生成失败")
+                )
+            }
+
+            val raw = builder.toString().trim()
+            if (raw.isEmpty()) {
+                return@withContext Result.failure(IllegalStateException("模型没有返回内容"))
+            }
+            val pair = splitExample(raw)
+            Result.success(pair)
+        }
+
+    /** 把模型输出拆成 (例句, 翻译)：优先按 `|||` 分隔，否则按首行/其余行。 */
+    private fun splitExample(raw: String): Pair<String, String> {
+        fun tidy(s: String): String = s.trim().trim('"', '「', '」', '\'', '“', '”')
+        val sep = raw.indexOf("|||")
+        if (sep >= 0) {
+            return tidy(raw.substring(0, sep)) to tidy(raw.substring(sep + 3))
+        }
+        val lines = raw.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val sentence = tidy(lines.firstOrNull().orEmpty())
+        val translation = tidy(lines.drop(1).joinToString(" "))
+        return sentence to translation
+    }
+
+    // ========================================================================
+    // 阅读器：选句翻译 / 句法切分（一次性文本推理）
+    // ========================================================================
+    //
+    // 这两件事都只需要"把一段文字交给当前模型、拿回一段文本"，既不落库、也
+    // 不进对话树、更不该顺带搜一遍网。所以它们复用 [AiStreamClient.runChat] 这
+    // 条与对话**完全相同**的通路（本地 NPU 离线模型会自动路由到端侧引擎），
+    // 而不另起一套 HTTP 客户端 —— 另起一套必然出现"对话能用、翻译不能用"。
+    //
+    // 之所以把提示词放在 ViewModel 里而不是 UI 里：与 [generateWordExample] 一致，
+    // 提示词的措辞与输出约定是"模型契约"，不该散落在界面代码里。
+
+    /**
+     * 当前服务商能否做一次性文本推理；不能时给出**人类可读的原因**（null = 看起来可用）。
+     *
+     * 判据只有一条，与 [runCompletion] 的入口检查一致：云端服务商没填 API 密钥。
+     *
+     * 注：本地大模型（NPU / llama.cpp）方案已按用户要求整体移除，因此不再有
+     * "本地模型未挂载"这一条判据。
+     *
+     * 这里只做"提前拦一刀"，让界面能明确说出原因；真正的可用性仍以推理时的
+     * 错误为准，那时把原始错误照实抛出，不在这里假装成功。
+     */
+    fun oneShotUnavailableReason(): String? {
+        val provider = activeProvider
+        return when {
+            provider.apiKey.isBlank() ->
+                "当前服务商「${provider.name}」未配置 API 密钥，无法推理。" +
+                    "请在「设置」中填写密钥。"
+            else -> null
+        }
+    }
+
+    /**
+     * 选句翻译（流式，一次性）。
+     *
+     * @param targetLanguage 目标语言的中文名（"中文"/"英文"/"俄文"），由界面给出。
+     */
+    fun streamSentenceTranslation(sourceText: String, targetLanguage: String): Flow<String> =
+        streamOneShotText(
+            systemPrompt = "你是专业翻译。只输出译文本身：不要解释、不要照抄原文、不要加引号、不要编号。",
+            userPrompt = "把下面这段文字翻译成$targetLanguage。只输出译文。\n\n$sourceText"
+        )
+
+    /**
+     * 词条释义的云端翻译（词典页「云端翻译」按钮）。
+     *
+     * 只翻译**已经存在的词库释义原文**，不生成新内容、不联网检索 —— 提示词里
+     * 把词条与释义原文一并给出，让多义词有上下文可依，但模型没有别的发挥空间。
+     * 走 [streamOneShotText] 这条与对话完全相同的通路，因此服务商换成什么都能用。
+     *
+     * @param headword 词条本身（仅作上下文，不参与检索）。
+     * @param sourceGloss 词库里的释义原文；空白时**不发请求**，直接给一条空流。
+     * @param targetLanguage 目标语言的中文名（默认"中文"），由界面给出。
+     */
+    fun streamEntryTranslation(
+        headword: String,
+        sourceGloss: String,
+        targetLanguage: String = "中文"
+    ): Flow<String> {
+        val cleanHeadword = headword.trim()
+        val cleanGloss = sourceGloss.trim()
+        if (cleanGloss.isEmpty()) return flowOf("")
+        return streamOneShotText(
+            systemPrompt = "你是词典释义译者。只输出译文本身，不要解释、不要 markdown、不要引号、不要编号。",
+            userPrompt = "词条：$cleanHeadword\n" +
+                "词库释义原文：\n$cleanGloss\n\n" +
+                "把上面这条词库释义翻译成$targetLanguage。只输出译文。"
+        )
+    }
+
+    /**
+     * 句法切分（流式，一次性）。要求模型返回**严格 JSON 数组**，schema 见
+     * [SYNTAX_JSON_CONTRACT]。
+     */
+    fun streamSyntaxAnalysis(sourceText: String): Flow<String> =
+        streamOneShotText(
+            systemPrompt = "你是句法结构分析助手。严格只输出一个 JSON 数组，" +
+                "不要输出任何解释文字、不要用 Markdown 代码块包裹。",
+            userPrompt = "$SYNTAX_JSON_CONTRACT\n\n待分析文本：\n$sourceText"
+        )
+
+    /**
+     * 一次性文本推理：不落库、不写入对话树、不联网检索，与对话走同一条通路。
+     *
+     * 失败一律以异常抛出（网络错误、模型报错、未配置密钥/未挂载本地模型），
+     * 由调用方决定怎么如实呈现 —— 这里绝不返回"看起来像成功"的空字符串。
+     */
+    private fun streamOneShotText(systemPrompt: String, userPrompt: String): Flow<String> = flow {
+        oneShotUnavailableReason()?.let { throw IllegalStateException(it) }
+        val provider = activeProvider
+        aiClient.runChat(
+            provider = provider,
+            messages = listOf(PromptMessage(role = "user", content = userPrompt)),
+            systemPrompt = systemPrompt,
+            searchConfig = settings.searchConfig().copy(enabled = false)
+        ).collect { event ->
+            when (event) {
+                is ChatEvent.Text -> emit(event.delta)
+                is ChatEvent.Failed -> throw IllegalStateException(event.message)
+                else -> Unit
+            }
+        }
+    }
+
+    // ========================================================================
+    // 问答归属：按名字复用文件夹 + 在文件夹下新建提问会话
+    // ========================================================================
+
+    /**
+     * 取或建一个**根目录下**、以 [name] 命名的文件夹（同名复用，不重复创建）。
+     *
+     * 为什么复用而不是每次新建：词典提问都应该收在同一个「词典」文件夹里，
+     * 书籍问答都应该收在同一个「《书名》」文件夹里。若每次提问都新建，
+     * 用户点开文件视图会看到几十个同名文件夹 —— 那比不归档更糟。
+     */
+    private suspend fun ensureRootFolderByName(name: String): Folder {
+        val trimmed = name.trim().ifBlank { "未命名" }
+        val existing = folderDao.getAllFolders()
+            .firstOrNull { it.parentFolderId == null && it.name == trimmed }
+        if (existing != null) return existing
+        val folder = Folder(parentFolderId = null, name = trimmed)
+        folderDao.insertFolder(folder)
+        return folder
+    }
+
+    /**
+     * 在名为 [folderName] 的文件夹下新建一个会话（含 root 节点），
+     * 可选地把 [question] 作为首条用户消息写入并立即开始生成。
+     *
+     * 词典的「选词提问」传入 folderName = "词典"；阅读器对书提问传入
+     * folderName = 书名。两者都只是调用方给的字符串，这里不写死任何业务名。
+     *
+     * @param originQuote 选中的原文片段（对话分支的引用来源），可为空。
+     * @param onCreated 回调在**主线程**触发，给出可开窗的 root 节点 id 与会话 id。
+     */
+    fun createQuestionInFolder(
+        folderName: String,
+        conversationTitle: String,
+        question: String,
+        originQuote: String? = null,
+        onCreated: (nodeId: String, conversationId: String) -> Unit
+    ) {
+        val trimmedQuestion = question.trim()
+        if (trimmedQuestion.isEmpty() && originQuote.isNullOrBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val folder = ensureRootFolderByName(folderName)
+            val conversation = createConversationInternal(
+                folderId = folder.id,
+                title = conversationTitle.trim().ifBlank { folder.name },
+                sourceOrigin = "来自「${folder.name}」",
+                seedWelcome = false
+            )
+            val root = dao.getRootNodeForConversation(conversation.id) ?: return@launch
+            if (!originQuote.isNullOrBlank()) {
+                dao.updateNode(root.copy(originQuote = originQuote))
+            }
+            if (trimmedQuestion.isNotEmpty()) {
+                dao.insertMessage(
+                    ChatMessage(nodeId = root.id, role = "user", content = trimmedQuestion)
+                )
+            }
+            folderDao.touchConversation(conversation.id, System.currentTimeMillis())
+
+            // 先回调（界面据此开窗/切视图），再起流式补全 ——
+            // 反过来的话，用户要等到第一段生成完成才看到窗口出现。
+            withContext(Dispatchers.Main) { onCreated(root.id, conversation.id) }
+            if (trimmedQuestion.isNotEmpty()) {
+                runCompletion(root.id)
+            }
+        }
+    }
+
+    // ========================================================================
+    // 分支树与消息
+    // ========================================================================
+
+    fun getMessagesForNode(nodeId: String): Flow<List<ChatMessage>> =
+        dao.observeMessagesForNode(nodeId)
+
+    fun getNode(nodeId: String): Flow<ConversationNode?> = dao.observeNodeById(nodeId)
+
+    /**
+     * 分叉出一个子节点。
+     *
+     * @param sourceMessageId 这段引用取自哪条消息。
+     *   它是"点击引用卡片跳回原文"的依据（ConversationNode.sourceMessageId 早已存在，
+     *   此前一直没被写入 —— 于是引用卡片点了没反应，只能看不能跳）。
+     *   可以为 null：早期数据与"整段分叉"都没有具体来源消息。
+     */
+    suspend fun forkChildNode(
+        parentNodeId: String,
+        selectedQuote: String,
+        sourceMessageId: String? = null
+    ): ConversationNode =
+        withContext(Dispatchers.IO) {
+            val parent = dao.getNodeById(parentNodeId)
+            val snippet = if (selectedQuote.length > 16) selectedQuote.take(16) + "..." else selectedQuote
+            val childNode = ConversationNode(
+                parentId = parentNodeId,
+                conversationId = parent?.conversationId,
+                title = "分支：$snippet",
+                originQuote = selectedQuote,
+                sourceMessageId = sourceMessageId
+            )
+            dao.insertNode(childNode)
+            childNode
+        }
+
+    /**
+     * 新建一个**空白**下级分支节点。
+     *
+     * 对齐旧实现 `CardActionController.createChildNode`：插入一行
+     * `title='新建下级思考分支'`、`origin_quote=''` 的子节点，父节点为传入节点。
+     * 与 [forkChildNode] 的差别只在"没有引用来源"（用户没有选中任何一段话）。
+     */
+    suspend fun createChildNode(
+        parentNodeId: String,
+        title: String = "新建下级思考分支"
+    ): ConversationNode? = withContext(Dispatchers.IO) {
+        val parent = dao.getNodeById(parentNodeId) ?: return@withContext null
+        val child = ConversationNode(
+            parentId = parentNodeId,
+            conversationId = parent.conversationId,
+            title = title,
+            originQuote = ""
+        )
+        dao.insertNode(child)
+        child
+    }
+
+    /**
+     * 针对敏感枝条的「脱敏解耦分叉」复合功能：
+     *
+     * 1. 解耦祖先链（Decoupled Ancestry）：
+     *    将新节点的 parentId 设为 null，成为一棵独立生长的安全干净根枝条；
+     *    同时记录 sourceMessageId = parentNodeId，保留跨视图面包屑与双向视觉连线。
+     * 2. 上下文脱敏与技术摘要擦除（Sanitized Context Extract）：
+     *    从原敏感枝条的消息中提取纯技术/学术讨论内容，将可能触发风控的词汇和敏感实体剥离脱敏，
+     *    填入新节点的 originQuote，既不丢失前序技术背景，又彻底切断上游违规长上下文。
+     * 3. 自动解除敏感标记（Auto-Clear Sensitivity）：
+     *    新分支由系统认证为纯净脱敏分支（sensitive = false）。
+     */
+    suspend fun forkSanitizedBranch(
+        sourceNodeId: String,
+        sanitizedSummary: String? = null
+    ): ConversationNode = withContext(Dispatchers.IO) {
+        val sourceNode = dao.getNodeById(sourceNodeId)
+        val sourceMessages = dao.getMessagesForNode(sourceNodeId)
+
+        val cleanSummary = sanitizedSummary?.trim().takeIf { !it.isNullOrBlank() }
+            ?: run {
+                val lastAssistant = sourceMessages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
+                val lastUser = sourceMessages.lastOrNull { it.role == "user" && it.content.isNotBlank() }
+                val combined = "${lastUser?.content.orEmpty()}\n${lastAssistant?.content.orEmpty()}"
+                com.treechat.workbench.safety.BranchSafetyAuditor.generateSanitizedText(combined)
+            }
+
+        val childTitle = "脱敏接力：" + (sourceNode?.title?.take(10) ?: "独立分支")
+        val cleanNode = ConversationNode(
+            parentId = null,
+            conversationId = sourceNode?.conversationId,
+            title = childTitle,
+            originQuote = "【已合规脱敏上下文】\n$cleanSummary",
+            sourceMessageId = sourceNodeId
+        )
+        dao.insertNode(cleanNode)
+
+        sensitiveBranchStore.setNodeSensitive(cleanNode.id, false)
+        cleanNode
+    }
+
+    val conversationDao: com.treechat.workbench.data.db.ConversationDao get() = dao
+
+    /**
+     * 可被"关联/挂载"到 [targetNodeId] 之下的候选卡片。
+     *
+     * 过滤规则（同一会话内）：
+     *  1. 排除目标自身；
+     *  2. 排除目标的**后代**（它们本就在这棵子树里，挂上去没有意义）；
+     *  3. 排除目标的**祖先**（把祖先挂到它自己的后代下面会形成环）。
+     *
+     * 旧实现只做了 `id != target` 一条（甚至还带 `LIMIT 25` 且不区分会话），
+     * 那是会成环的；这里按工程要求补齐了防环过滤。
+     */
+    suspend fun attachableCandidates(targetNodeId: String): List<ConversationNode> =
+        withContext(Dispatchers.IO) {
+            val target = dao.getNodeById(targetNodeId) ?: return@withContext emptyList()
+            val convId = target.conversationId ?: return@withContext emptyList()
+            val all = dao.getNodesForConversation(convId)
+            val byParent = all.groupBy { it.parentId }
+
+            // 后代集合（BFS；visited 兼作防环，避免历史脏数据成环时死循环）
+            val descendants = mutableSetOf<String>()
+            val stack = ArrayDeque(byParent[targetNodeId].orEmpty())
+            while (stack.isNotEmpty()) {
+                val n = stack.removeFirst()
+                if (descendants.add(n.id)) stack.addAll(byParent[n.id].orEmpty())
+            }
+
+            // 祖先集合（含自身；guard 防环）
+            val ancestors = mutableSetOf<String>()
+            val byId = all.associateBy { it.id }
+            var cursor: ConversationNode? = target
+            var guard = 0
+            while (cursor != null && guard++ < 1024) {
+                ancestors.add(cursor.id)
+                cursor = cursor.parentId?.let { byId[it] }
+            }
+
+            all.filter {
+                it.id != targetNodeId && it.id !in descendants && it.id !in ancestors
+            }
+        }
+
+    /**
+     * 把 [nodeId] 挂载为 [newParentId] 的下级分支（改 `parentId` 与 `conversationId`）。
+     *
+     * 对齐旧实现 `showAttachCardsDialog` 里那条
+     * `UPDATE conversation_nodes SET parent_id=?, conversation_id=? WHERE id=?`，
+     * 但**在提交前重新做一次防环校验**（列表可能已经过期）：若被挂载节点是目标的
+     * 祖先（或自身），直接如实返回失败原因，绝不静默改库。
+     */
+    suspend fun attachNodeToParent(nodeId: String, newParentId: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            if (nodeId == newParentId) {
+                return@withContext Result.failure(IllegalStateException("不能把卡片挂到它自己下面"))
+            }
+            val node = dao.getNodeById(nodeId)
+                ?: return@withContext Result.failure(IllegalStateException("找不到要挂载的卡片"))
+            val target = dao.getNodeById(newParentId)
+                ?: return@withContext Result.failure(IllegalStateException("找不到目标卡片"))
+
+            val convId = target.conversationId
+            val all = if (convId == null) emptyList() else dao.getNodesForConversation(convId)
+            val byId = all.associateBy { it.id }
+
+            // 从目标沿 parent 上溯：若途中出现被挂载节点，则被挂载节点是目标的祖先 → 成环
+            var cursor: ConversationNode? = byId[newParentId]
+            var guard = 0
+            while (cursor != null && guard++ < 1024) {
+                if (cursor.id == nodeId) {
+                    return@withContext Result.failure(
+                        IllegalStateException("无法关联：该卡片是当前节点的上级分支，挂载后会形成环")
+                    )
+                }
+                cursor = cursor.parentId?.let { byId[it] }
+            }
+
+            dao.updateNode(node.copy(parentId = newParentId, conversationId = convId))
+            Result.success(Unit)
+        }
+
+    /**
+     * 为"分支结论提炼与合并 (Branch Merge)"准备草稿。
+     *
+     * 对齐旧实现 `mergeBranchInsightToParent` 的取数逻辑：
+     *  - 先取该分支自己的 `summary`；
+     *  - 为空则退化为该分支**最后一条助手消息**的正文；
+     *  - 若该节点没有母节点（主干根节点），返回失败并带上旧实现的原话文案。
+     *
+     * 注意：旧实现**没有调用任何模型**，只是把草稿预填进输入框让用户编辑，
+     * 因此这里同样不调用 LLM —— 不会凭空"提炼"出用户没写过的结论。
+     */
+    suspend fun prepareBranchMerge(nodeId: String): Result<BranchMergeJob> =
+        withContext(Dispatchers.IO) {
+            val node = dao.getNodeById(nodeId)
+                ?: return@withContext Result.failure(IllegalStateException("找不到该分支卡片"))
+            val parentId = node.parentId
+            if (parentId.isNullOrBlank()) {
+                return@withContext Result.failure(
+                    IllegalStateException("当前节点为主干根节点，无母节点可反哺")
+                )
+            }
+            val parent = dao.getNodeById(parentId)
+            var draft = node.summary.orEmpty()
+            if (draft.isBlank()) {
+                draft = dao.getMessagesForNode(nodeId)
+                    .lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
+                    ?.content
+                    .orEmpty()
+            }
+            Result.success(
+                BranchMergeJob(
+                    branchNodeId = nodeId,
+                    parentNodeId = parentId,
+                    parentTitle = parent?.title,
+                    branchTitle = node.title.ifBlank { "支线思考" },
+                    draft = draft
+                )
+            )
+        }
+
+    /**
+     * 执行"分支结论提炼与合并"：把结论反哺到母节点上下文。
+     *
+     * 落库方式**严格对齐旧实现**：
+     *  1. 在**母节点**下插入一条 `role='assistant'` 的消息，内容为
+     *     `【支线洞察卡片】\n来自探索分支：「分支标题」\n核心结论：\n<结论>`；
+     *  2. 把**分支节点**自己的 `summary` 更新为这条结论。
+     *
+     * 换来的效果：母节点下一轮对话时，`getAncestorChain` 会把这批消息当作上下文，
+     * 于是支线的结论真正"汇入主干"。
+     */
+    suspend fun mergeBranchInsight(job: BranchMergeJob, insight: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            val clean = insight.trim()
+            if (clean.isBlank()) {
+                return@withContext Result.failure(IllegalStateException("结论内容不能为空"))
+            }
+            val branch = dao.getNodeById(job.branchNodeId)
+                ?: return@withContext Result.failure(IllegalStateException("找不到该分支卡片"))
+            val parentId = branch.parentId
+            if (parentId.isNullOrBlank()) {
+                return@withContext Result.failure(
+                    IllegalStateException("当前节点为主干根节点，无母节点可反哺")
+                )
+            }
+            val content = buildString {
+                append("【支线洞察卡片】\n")
+                append("来自探索分支：「").append(job.branchTitle).append("」\n")
+                append("核心结论：\n").append(clean)
+            }
+            dao.insertMessage(
+                ChatMessage(
+                    nodeId = parentId,
+                    role = "assistant",
+                    content = content
+                )
+            )
+            dao.updateNode(branch.copy(summary = clean))
+            Result.success(Unit)
+        }
+
+    // ------------------------------------------------------------ 笔记高亮
+
+    /** 当前节点下所有消息的高亮（UI 按 messageId 分组使用）。 */
+    fun getHighlightsForNode(nodeId: String): Flow<List<Highlight>> =
+        highlightDao.observeForNode(nodeId)
+
+    /**
+     * 加/取消一条高亮。
+     *
+     * 用"同消息同范围"判定是否已存在，而不是靠 UI 传 id：
+     * 同一段文字可能被用户在调整选区后重复标记，按范围判重能自然合并；
+     * 已存在则删除，实现工具条上「高亮 / 取消高亮」的单按钮切换。
+     */
+    /**
+     * 加/取消高亮，支持**一次提交多个区间**。
+     *
+     * 为什么需要多区间：跨块选区（例如从标题一直选到第二段）在源 Markdown 上
+     * 不是一段连续区间 —— 中间还夹着井号、列表符号等标记。若硬凑成一个
+     * 大区间存下来，下次渲染时那些标记也会被一起点亮。所以跨块选择就拆成
+     * 每块一条高亮。
+     *
+     * 判重按"同消息同范围"，全部区间都已存在则视为取消（整条删除），
+     * 否则补齐缺失的那些。这样工具条上的「高亮 / 取消高亮」始终是单按钮切换。
+     */
+    /**
+     * 切换高亮状态：
+     * 如果当前选区与任何已有高亮有重叠，点击即为"取消/清除高亮"（清理重叠高亮）；
+     * 否则为新增高亮。彻底解决用户选区没有精确到单个字符就无法取消高亮的顽疾。
+     */
+    fun toggleHighlights(
+        messageId: String,
+        nodeId: String,
+        ranges: List<Pair<Int, Int>>
+    ) {
+        val valid = ranges.filter { it.first < it.second }
+        if (valid.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = highlightDao.getForMessage(messageId)
+            val hasOverlap = valid.any { range ->
+                existing.any { h -> !(h.endOffset <= range.first || h.startOffset >= range.second) }
+            }
+            if (hasOverlap) {
+                // 存在重叠，视为取消高亮：清除所有与选区重叠的高亮条目
+                valid.forEach { range ->
+                    highlightDao.deleteOverlapping(messageId, range.first, range.second)
+                }
+            } else {
+                valid.forEach { range ->
+                    highlightDao.insert(
+                        Highlight(
+                            messageId = messageId,
+                            nodeId = nodeId,
+                            startOffset = range.first,
+                            endOffset = range.second
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /** 撤回当前消息最近一次添加的高亮条目 */
+    fun undoLatestHighlight(messageId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            highlightDao.deleteLatest(messageId)
+        }
+    }
+
+    /** 这条消息属于哪个节点（引用卡片跳回原文时需要知道目标会话/分支）。 */
+    suspend fun nodeIdOfMessage(messageId: String): String? = withContext(Dispatchers.IO) {
+        dao.getNodeIdForMessage(messageId)
+    }
+
+    /**
+     * 某分支里最后一条消息的 id。
+     *
+     * 用于"从当前视图分叉"时记录来源消息：用户看到的是最后一条，
+     * 引用卡片跳回来自然也应该落在它上面。
+     */
+    suspend fun latestMessageIdOfNode(nodeId: String): String? = withContext(Dispatchers.IO) {
+        dao.getMessagesForNode(nodeId).lastOrNull()?.id
+    }
+
+    /**
+     * 为「活体手写笔记快照」批量读取各分支节点的核心问答摘要。
+     *
+     * 当用户在笔记界面把卡片拉大时，卡片内即可展示这段核心正文，方便用荧光笔划重点或贴遮挡胶带。
+     */
+    suspend fun loadNodeSummaries(nodeIds: List<String>): Map<String, String> =
+        withContext(Dispatchers.IO) {
+            val result = mutableMapOf<String, String>()
+            for (id in nodeIds) {
+                val msgs = dao.getMessagesForNode(id)
+                if (msgs.isEmpty()) continue
+                val lastAssistant = msgs.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
+                val lastUser = msgs.lastOrNull { it.role == "user" && it.content.isNotBlank() }
+                val raw = buildString {
+                    if (lastUser != null) {
+                        append("问：").append(lastUser.content.replace("\n", " ").take(72)).append("\n")
+                    }
+                    if (lastAssistant != null) {
+                        val cleaned = lastAssistant.content
+                            .replace(Regex("```[\\s\\S]*?```"), "[代码段]")
+                            .replace(Regex("[#*>`~]+"), "")
+                            .replace(Regex("\\n{2,}"), "\n")
+                            .trim()
+                        append(cleaned.take(360))
+                    }
+                }.trim()
+                if (raw.isNotBlank()) {
+                    result[id] = raw
+                }
+            }
+            result
+        }
+
+    /** 某个节点属于哪个会话（跨会话跳转时需要先把目标会话切成当前会话）。 */
+    suspend fun conversationIdOfNode(nodeId: String): String? = withContext(Dispatchers.IO) {
+        dao.getNodeById(nodeId)?.conversationId
+    }
+
+    /** 该消息上是否已经存在同一范围的高亮（工具条据此显示"取消高亮"）。 */
+    suspend fun hasHighlight(messageId: String, start: Int, end: Int): Boolean =
+        withContext(Dispatchers.IO) {
+            highlightDao.getForMessage(messageId)
+                .any { it.startOffset == start && it.endOffset == end }
+        }
+
+
+    /**
+     * 发送一条用户消息。
+     *
+     * @param images 随消息附带的图片（**已压缩过的 data URI**，见 ImagePicker）。
+     *   直接存库而不存文件路径：相册给的 content:// 授权是临时的，
+     *   进程重启后失效，只有字节本身才能做到"重启后历史图片还在"。
+     */
+    fun sendMessage(nodeId: String, userText: String, images: List<String> = emptyList()) {
+        // 只有图片没有文字时也要允许发送（用户可能只想问"这张图是什么"），
+        // 所以判空条件改为"文字与图片都为空"才拦截。
+        if (userText.isBlank() && images.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.insertMessage(
+                ChatMessage(
+                    nodeId = nodeId,
+                    role = "user",
+                    content = userText.trim(),
+                    imagesJson = encodeImages(images)
+                )
+            )
+            // 让最近活跃的会话排到列表最前
+            _activeConversationId.value?.let { folderDao.touchConversation(it, System.currentTimeMillis()) }
+            runCompletion(nodeId)
+        }
+    }
+
+    fun regenerateLast(nodeId: String) {
+        if (_streamingNodes.value.contains(nodeId)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val messages = dao.getMessagesForNode(nodeId)
+            val lastUserIndex = messages.indexOfLast { it.role == "user" }
+            if (lastUserIndex < 0) return@launch
+            messages.drop(lastUserIndex + 1)
+                .filter { it.role == "assistant" }
+                .forEach { dao.deleteMessage(it.id) }
+            runCompletion(nodeId)
+        }
+    }
+
+    /** 删除单条消息（单个对话内容）。 */
+    fun deleteSingleMessage(messageId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.deleteMessage(messageId)
+        }
+    }
+
+    fun stopStreaming(nodeId: String) {
+        activeJobs.remove(nodeId)?.cancel()
+        _streamingNodes.value = _streamingNodes.value - nodeId
+        _searchingQuery.value = null
+    }
+
+    fun deleteNode(nodeId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val node = dao.getNodeById(nodeId) ?: return@launch
+            if (node.parentId == null) return@launch
+            stopStreaming(nodeId)
+            dao.deleteNodeById(nodeId)
+        }
+    }
+
+    fun renameNode(nodeId: String, newTitle: String) {
+        if (newTitle.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val node = dao.getNodeById(nodeId) ?: return@launch
+            dao.updateNode(node.copy(title = newTitle.trim()))
+        }
+    }
+
+    fun updateSummary(nodeId: String, summary: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val node = dao.getNodeById(nodeId) ?: return@launch
+            dao.updateNode(node.copy(summary = summary))
+        }
+    }
+
+    // ========================================================================
+    // 流式补全
+    // ========================================================================
+
+    private suspend fun runCompletion(nodeId: String) {
+        val provider = activeProvider
+        val deepseekKey = savedProviders
+            .firstOrNull {
+                it.id.contains("deepseek", ignoreCase = true) ||
+                    it.baseUrl.contains("api.deepseek.com", ignoreCase = true)
+            }
+            ?.apiKey
+            ?.takeIf { it.isNotBlank() }
+            ?: provider.apiKey.takeIf {
+                provider.id.contains("deepseek", ignoreCase = true) ||
+                    provider.baseUrl.contains("api.deepseek.com", ignoreCase = true)
+            }.orEmpty()
+        val searchConfig = settings.searchConfig().copy(deepseekApiKey = deepseekKey)
+
+        if (provider.apiKey.isBlank()) {
+            dao.insertMessage(
+                ChatMessage(
+                    nodeId = nodeId,
+                    role = "assistant",
+                    content = "尚未配置 API 密钥。\n\n请点击右上角 **设置** 填写 API 地址与密钥后再对话。"
+                )
+            )
+            return
+        }
+
+        val currentNode = dao.getNodeById(nodeId)
+        val ancestors = dao.getAncestorChain(nodeId)
+        val promptList = mutableListOf<PromptMessage>()
+
+        // 彻底解决"选句后针对提问 AI 回复没有上下文"的根因：
+        // 从当前节点本身及祖先链路上提取用户选中的原文段落（originQuote），
+        // 即使是阅读器/浏览器新建的 Root 树也能精准捕获
+        val activeOriginQuote = (listOfNotNull(currentNode) + ancestors.reversed())
+            .mapNotNull { it.originQuote?.trim() }
+            .firstOrNull { it.isNotBlank() }
+
+        if (!activeOriginQuote.isNullOrBlank()) {
+            promptList.add(
+                PromptMessage(
+                    role = "system",
+                    content = "【当前讨论分支引用的原文段落】：\n「$activeOriginQuote」\n用户在此分支的提问均针对此段内容展开。"
+                )
+            )
+        }
+
+        for (ancestor in ancestors) {
+            if (!ancestor.originQuote.isNullOrBlank()) {
+                promptList.add(
+                    PromptMessage(
+                        role = "system",
+                        content = "当前讨论分支聚焦于上级引用的这段内容：「${ancestor.originQuote}」。"
+                    )
+                )
+            }
+            if (!ancestor.summary.isNullOrBlank()) {
+                promptList.add(
+                    PromptMessage(role = "system", content = "【历史脉络摘要】${ancestor.summary}")
+                )
+            }
+            dao.getMessagesForNode(ancestor.id).forEach { message ->
+                if (message.content.isNotBlank()) {
+                    promptList.add(
+                        PromptMessage(
+                            role = message.role,
+                            content = message.content,
+                            images = decodeImages(message.imagesJson)
+                        )
+                    )
+                }
+            }
+        }
+
+        // ---- 只保留最后一条用户消息的图片 ----
+        //
+        // 为什么必须这样：图片存的是 base64 data URI，体积比原文膨胀约 33%。
+        // 若每轮都把历史图片重发一遍，几轮之后 token 消耗会爆炸
+        // （而且模型对"更早的图"通常也不再需要）。
+        // 只带最新一轮的图，既让模型看到本次问题附的图，又不让上下文无限膨胀。
+        val lastUserIndex = promptList.indexOfLast { it.role == "user" }
+        if (lastUserIndex >= 0) {
+            for (i in promptList.indices) {
+                if (i != lastUserIndex && promptList[i].images.isNotEmpty()) {
+                    promptList[i] = promptList[i].copy(images = emptyList())
+                }
+            }
+        }
+
+        // ---- 提示词长度预算（这是本地模型"巨慢/卡在生成中"的主因）----
+        // 上面把**整条祖先链上每个节点的全部消息**都拼了进来，且没有任何上限：
+        // 对话树是本应用的核心用法，用着用着 prompt 就会涨到几千 token。
+        // 历史上有过"本地引擎 prefill 纯 CPU 串行、首字迟迟不来"的问题；
+        // 本地大模型方案现已整体移除，这里只按云端口径做一次字符预算裁剪。
+        val promptListTrimmed = trimPromptListToBudget(
+            promptList,
+            CLOUD_CONTEXT_CHAR_BUDGET
+        )
+
+        val basePrompt = settings.systemPrompt
+            .takeIf { it.isNotBlank() }
+            ?: AppSettings.DEFAULT_SYSTEM_PROMPT
+
+        // ---- 本地教材检索（RAG）----
+        //
+        // 用**最后一条用户消息**作为查询：当前这一轮要回答的就是它。
+        // 用整段对话会稀释关键词，反而降低召回（本项目实测 2 字组检索
+        // 对"问题短、术语集中"的查询效果最好）。
+        val knowledgeSection = if (settings.knowledgeEnabled) {
+            val lastUserText = promptListTrimmed.lastOrNull { it.role == "user" }?.content.orEmpty()
+            if (lastUserText.isBlank()) {
+                KnowledgeRetriever.EMPTY
+            } else {
+                // 检索失败绝不能让整轮对话失败：教材是增强手段，
+                // 它出问题时应当退化成普通问答，而不是报错。
+                runCatching {
+                    knowledgeRetriever.retrieveWithConfig(
+                        query = lastUserText,
+                        topK = KnowledgeRetriever.DEFAULT_TOP_K,
+                        cloudConfig = settings.cloudRagConfig(),
+                        embeddingClient = cloudEmbeddingClient
+                    )
+                }.getOrElse { KnowledgeRetriever.EMPTY }
+            }
+        } else {
+            KnowledgeRetriever.EMPTY
+        }
+        _lastKnowledgeCitations.value = KnowledgeRetriever.citationsOf(knowledgeSection)
+
+        val effectivePrompt = buildString {
+            append(basePrompt)
+            if (!activeOriginQuote.isNullOrBlank()) {
+                append("\n\n【用户重点关注与引用的原文/上下文段落】：\n「$activeOriginQuote」\n用户当前的所有提问都是针对上述引用的原文展开的，请务必结合该段原文的具体语境、词句含义与逻辑进行精准解答。")
+            }
+            // 概念链接提示：约定模型把值得下钻的核心概念用 [[ ]] 包起来。
+            // 前端据此渲染"实线/虚线"概念链接（命中本地词库走词典，未命中走轻量追问）。
+            // 放在这里而不是 AppSettings.DEFAULT_SYSTEM_PROMPT：这样用户**自定义**
+            // 系统提示词时同样带上这条约定，不必再手写一遍。
+            append("\n\n输出时，请用双方括号把值得下钻的核心概念包起来（如 [[递归]]），")
+            append("便于读者点击查看释义或词源；只包裹真正的术语/概念名词，")
+            append("不要包裹普通词或整句，也不要嵌套标记。")
+            if (searchConfig.enabled) {
+                append("\n\n你具备联网检索能力。当问题涉及实时信息、当前事件、")
+                append("或你不确定的事实时，主动调用 web_search 工具，不要凭记忆猜测。")
+                append("引用检索到的资料时用 [编号] 标注来源。")
+            }
+            val knowledgeText = KnowledgeRetriever.buildSystemPromptSection(knowledgeSection)
+            if (knowledgeText.isNotBlank()) {
+                append("\n\n").append(knowledgeText)
+            }
+        }
+
+        val knowledgeSourcesJson = if (knowledgeSection.evidences.isNotEmpty()) {
+            gson.toJson(knowledgeSection.evidences)
+        } else {
+            null
+        }
+
+        val assistantMsg = ChatMessage(
+            nodeId = nodeId,
+            role = "assistant",
+            content = "",
+            isStreaming = true,
+            knowledgeSourcesJson = knowledgeSourcesJson
+        )
+        dao.insertMessage(assistantMsg)
+
+        _streamingNodes.value = _streamingNodes.value + nodeId
+
+        val builder = StringBuilder()
+        // 思考过程单独累积：既要实时显示，也要在结束时落库。
+        val reasoningBuilder = StringBuilder()
+        val sources = mutableListOf<SearchResult>()
+        // 界面刷新节流（约 60fps 上限）：delta 攒着，每 16ms 推一次内存态。
+        // 落库是另一个更慢的节流（见 DB_FLUSH_MS），两者分开。
+        var lastUiPush = 0L
+        // 落库节流：流式期间每 500ms 写一次快照（崩溃/杀进程不丢全文），
+        // 平时界面只读内存态，不走 Room。
+        var lastDbFlush = 0L
+
+        val job = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                aiClient.runChat(
+                    provider = provider,
+                    messages = promptListTrimmed,
+                    systemPrompt = effectivePrompt,
+                    searchConfig = searchConfig
+                ).collect { event ->
+                    when (event) {
+                        is ChatEvent.Text -> {
+                            builder.append(event.delta)
+                            val now = System.currentTimeMillis()
+                            // 快路径：内存态即时刷新（界面直接读 streamingText，不等 Room）。
+                            // 16ms 节流 ≈ 60fps：比这更快人眼也分辨不出，还省重组。
+                            if (now - lastUiPush > 16) {
+                                lastUiPush = now
+                                _streamingText.value =
+                                    _streamingText.value + (nodeId to builder.toString())
+                            }
+                            // 慢路径：落库快照（崩溃不丢全文即可，不用跟手速）。
+                            if (now - lastDbFlush > 500) {
+                                lastDbFlush = now
+                                dao.updateMessage(
+                                    assistantMsg.copy(
+                                        content = builder.toString(),
+                                        isStreaming = true
+                                    )
+                                )
+                            }
+                        }
+
+                        is ChatEvent.Reasoning -> {
+                            // 思考内容：累积 + 立刻推给界面。
+                            reasoningBuilder.append(event.delta)
+                            val now = System.currentTimeMillis()
+                            if (now - lastUiPush > 16) {
+                                lastUiPush = now
+                                _streamingText.value =
+                                    _streamingText.value + (nodeId to builder.toString())
+                                _streamingReasoning.value =
+                                    _streamingReasoning.value + (nodeId to reasoningBuilder.toString())
+                            }
+                        }
+
+                        is ChatEvent.SearchStarted -> {
+                            _searchingQuery.value = event.query
+                            dao.updateMessage(
+                                assistantMsg.copy(
+                                    content = builder.toString().ifBlank { "正在联网检索…" },
+                                    isStreaming = true
+                                )
+                            )
+                        }
+
+                        is ChatEvent.SearchFinished -> {
+                            _searchingQuery.value = null
+                            if (event.error == null) {
+                                event.sources.forEach { source ->
+                                    if (sources.none { it.url == source.url }) sources.add(source)
+                                }
+                            } else {
+                                builder.append("\n\n> ⚠️ 联网检索提示：${event.error}\n\n")
+                            }
+                            dao.updateMessage(
+                                assistantMsg.copy(
+                                    content = builder.toString(),
+                                    isStreaming = true,
+                                    searchSourcesJson = encodeSources(sources)
+                                )
+                            )
+                        }
+
+                        is ChatEvent.Failed -> {
+                            // 失败也要把内存态清掉：否则界面会同时从"实时流"和
+                            // "落库消息"两处拿到文本，失败提示后面拖一条影子。
+                            _streamingText.value = _streamingText.value - nodeId
+                            val text = if (builder.isEmpty()) {
+                                "**请求失败**\n\n${event.message}"
+                            } else {
+                                "${builder}\n\n---\n\n**传输中断**：${event.message}"
+                            }
+                            dao.updateMessage(
+                                assistantMsg.copy(content = text, isStreaming = false)
+                            )
+                        }
+                    }
+                }
+
+                val reasoning = reasoningBuilder.toString().takeIf { it.isNotBlank() }
+                // 实时状态用完即清：内容已经落到消息里了，
+                // 留着会让界面同时从"实时流"和"消息"两处拿到同一段思考而重复显示。
+                _streamingReasoning.value = _streamingReasoning.value - nodeId
+                // 正文内存态同样清掉：此后界面只读落库的最终版本。
+                _streamingText.value = _streamingText.value - nodeId
+
+                dao.updateMessage(
+                    assistantMsg.copy(
+                        content = builder.toString().ifBlank { "（无输出）" },
+                        isStreaming = false,
+                        searchSourcesJson = encodeSources(sources),
+                        reasoningContent = reasoning
+                    )
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 用户点了"停止生成"。这里的收尾写入**必须放在 NonCancellable 里**：
+                // 协程已被取消，直接 suspend 调用会在第一个挂起点抛 CancellationException，
+                // 于是 `isStreaming = false` 永远写不进库 —— 消息会永久留在
+                // "生成中"状态，用户必须重启 App 才消失。这正是之前那个现象的根因之一。
+                withContext(NonCancellable) {
+                    _streamingText.value = _streamingText.value - nodeId
+                    dao.updateMessage(
+                        assistantMsg.copy(
+                            content = builder.toString().ifBlank { "（已停止生成）" },
+                            isStreaming = false,
+                            searchSourcesJson = encodeSources(sources),
+                            // 被中途停止时也保留已经收到的思考内容：
+                            // 那部分思考是用户已经"付费"等来的，丢掉可惜
+                            reasoningContent = reasoningBuilder.toString().takeIf { it.isNotBlank() }
+                        )
+                    )
+                }
+                throw e
+            } catch (e: Exception) {
+                _streamingText.value = _streamingText.value - nodeId
+                _streamingReasoning.value = _streamingReasoning.value - nodeId
+                dao.updateMessage(
+                    assistantMsg.copy(
+                        content = builder.toString() + "\n\n---\n\n**异常**：${e.localizedMessage}",
+                        isStreaming = false,
+                        searchSourcesJson = encodeSources(sources),
+                        reasoningContent = reasoningBuilder.toString().takeIf { it.isNotBlank() }
+                    )
+                )
+            } finally {
+                _streamingNodes.value = _streamingNodes.value - nodeId
+                _searchingQuery.value = null
+                // 兜底清理：若在上面的正常路径之后又抛了异常，
+                // 实时思考状态不能残留，否则界面会显示一条不存在的"正在思考"
+                _streamingReasoning.value = _streamingReasoning.value - nodeId
+                activeJobs.remove(nodeId)
+            }
+        }
+        activeJobs[nodeId] = job
+    }
+
+    private fun encodeSources(sources: List<SearchResult>): String? =
+        if (sources.isEmpty()) null else gson.toJson(sources)
+
+    /**
+     * 按字符预算裁剪提示词：**从最新的往回收**，超预算的老消息丢掉。
+     * 若预算极紧，仍保证最后一条用户消息在（那是本次提问本身）。
+     */
+    private fun trimPromptListToBudget(
+        list: List<PromptMessage>,
+        budgetChars: Int
+    ): List<PromptMessage> {
+        if (list.isEmpty()) return list
+        val kept = ArrayDeque<PromptMessage>()
+        var used = 0
+        for (i in list.indices.reversed()) {
+            val m = list[i]
+            // 每条按内容长度 + 少量模板开销估算；够精确就行，不必真分词
+            val cost = m.content.length + 16
+            if (kept.isNotEmpty() && used + cost > budgetChars) break
+            kept.addFirst(m)
+            used += cost
+        }
+        val lastUser = list.lastOrNull { it.role == "user" }
+        if (lastUser != null && kept.none { it.role == "user" && it.content === lastUser.content }) {
+            kept.addLast(lastUser)
+        }
+        return kept.toList()
+    }
+
+    companion object {
+
+        /**
+         * 本地引擎提示词字符预算的**默认值**（可在设置里改，见 [resolveLocalContextBudget]）。
+         *
+         * CPU prefill 耗时与长度成正比：预算越大，模型能记住的对话轮数越多，但首字越慢。
+         * 1600 字符 ≈ 1000~1600 token ≈ 最近 1~2 轮；要给到 8K 上下文的量级就调到 6000 以上。
+         */
+        private const val LOCAL_CONTEXT_CHAR_BUDGET = 1_600
+
+        /** 预置档位：保守 / 均衡 / 长记忆（字符数）。 */
+        val LOCAL_CONTEXT_BUDGET_PRESETS = listOf(1_600, 3_200, 6_000)
+
+        /** 读取用户在设置里选的本地上下文预算（不在预置里就用默认）。 */
+        private fun resolveLocalContextBudget(context: android.content.Context?): Int {
+            val ctx = context ?: return LOCAL_CONTEXT_CHAR_BUDGET
+            return runCatching {
+                ctx.getSharedPreferences("treechat_settings", android.content.Context.MODE_PRIVATE)
+                    .getInt(KEY_LOCAL_CONTEXT_BUDGET, LOCAL_CONTEXT_CHAR_BUDGET)
+                    .coerceIn(800, 24_000)
+            }.getOrDefault(LOCAL_CONTEXT_CHAR_BUDGET)
+        }
+
+        const val KEY_LOCAL_CONTEXT_BUDGET = "local_context_char_budget"
+
+        /** 写设置（设置面板用）。 */
+        fun setLocalContextBudget(context: android.content.Context?, budgetChars: Int) {
+            val ctx = context ?: return
+            runCatching {
+                ctx.getSharedPreferences("treechat_settings", android.content.Context.MODE_PRIVATE)
+                    .edit().putInt(KEY_LOCAL_CONTEXT_BUDGET, budgetChars.coerceIn(800, 24_000)).apply()
+            }
+        }
+
+        /** 云端引擎：prefill 在服务端，预算放宽即可。 */
+        private const val CLOUD_CONTEXT_CHAR_BUDGET = 24_000
+
+        private val WELCOME_MARKDOWN = """
+            # 欢迎使用「条畅」多维思维树
+
+            > *“榛楛济济，条枚畅畅。” ——《诗经·大雅·旱麓》*
+
+            我是你的**分支式多维对话助手**。枝条通达舒畅，本固枝荣。与传统单线聊天不同，这里的每一段讨论都可以就地开窗、独立生长。
+
+            ## 怎么用
+
+            1. **长按**本段中任意一句话
+            2. 浮出「针对此段提问」胶囊后点击
+            3. 就地孵化一个专属小窗，母会话**不受污染**
+
+            ### 主要能力
+
+            - **文件视图**：对话可以整理进文件夹，文件夹可嵌套，都能重命名
+            - **多维工作台**：用连线画出整棵对话树，卡片可拖动、可拉边缘改大小
+            - **无限级嵌套**：在小窗里还能再开小窗
+            - **碰谁谁置顶**：指尖碰到哪个窗，哪个窗就到最前
+            - **联网搜索**：在设置里开启后，检索到的网站会列在回答下方
+
+            代码也能正常渲染：
+
+            ```kotlin
+            // 单例拖拽控制器：全局只锁一个被拖动的窗口
+            var activeDraggingWindowId: String? = null
+            ```
+        """.trimIndent()
+    }
+}
+
+/**
+ * "分支结论提炼与合并 (Branch Merge)"的一次操作上下文。
+ *
+ * 由 [ChatNodeViewModel.prepareBranchMerge] 组装：母节点 id、母节点标题、
+ * 分支标题，以及预填进输入框的草稿（分支 summary，或退化为最后一条助手消息）。
+ * 界面拿到它只负责展示与编辑，落库一律回到 [ChatNodeViewModel.mergeBranchInsight]。
+ */
+data class BranchMergeJob(
+    val branchNodeId: String,
+    val parentNodeId: String,
+    val parentTitle: String?,
+    val branchTitle: String,
+    val draft: String
+)
+
+/**
+ * 句法切分的**输出契约**（提示词里逐字给出的 schema 与示例）。
+ *
+ * 刻意把 schema 与一个完整示例都写进提示词：只说"返回 JSON"时模型十有八九会
+ * 在数组外面裹一段解释或 Markdown 代码块；给出 schema + 例子能显著提高"直接
+ * 就是合法 JSON"的概率。但**仍然不能假设它一定合法** —— 解析失败时由界面
+ * 如实报错并原样展示模型输出，绝不用正则猜一棵语法树出来（见
+ * `ui/reader/SyntaxOverlay.kt` 的 parseSyntaxAnalysis）。
+ */
+private val SYNTAX_JSON_CONTRACT: String = """
+请把上面给出的那段文本按句法结构切分成**层级化的句法单元**，并以 JSON 数组返回。
+要求：
+1. 只输出一个 JSON 数组，数组之外不要有任何字符（不要解释、不要代码块围栏）。
+2. 每个元素形如 {"text": "...", "level": 0, "role": "主句"}。
+   - text：该单元的原文片段，必须**逐字照抄**原文（不要改写、不要翻译、不要合并标点）。
+   - level：层级，整数。0 表示最外层的主句，1 表示直接嵌套在主句里的从句/短语，
+     2 表示再往里一层的嵌套，依此类推。
+   - role：该单元的句法角色，用简短中文标注，例如"主句""宾语从句""定语从句"
+     "状语从句""时间状语""同位语""分词短语""介词短语""并列分句"。
+3. 单元的 text 在按数组顺序拼接后应当与原文本一致（允许不覆盖纯标点）。
+4. 无法判断时宁可少切，也不要编造层级。
+
+示例（输入：Although it rained, we went out because we wanted fresh air.）：
+[{"text":"Although it rained","level":1,"role":"让步状语从句"},{"text":", we went out","level":0,"role":"主句"},{"text":"because we wanted fresh air","level":1,"role":"原因状语从句"}]
+""".trimIndent()

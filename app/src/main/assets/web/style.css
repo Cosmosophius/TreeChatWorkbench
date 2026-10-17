@@ -1,0 +1,929 @@
+/* ================= 基础与主题 ================= */
+:root{
+  --bg:#ffffff; --fg:#1f2937; --muted:#6b7280; --line:#e5e7eb;
+  --card:#f9fafb; --accent:#2563eb; --accent-soft:#dbeafe;
+  --hi:#c0392b;        /* 生词高亮 */
+  --hi-bg:#fdece9;
+  --sent:#7c3aed; --sent-bg:#f3e8ff;
+  --star:#f59e0b;
+  --radius:14px;
+  --read-font:19px; --read-lh:1.9;
+}
+[data-theme="sepia"]{ --bg:#f7f1e3; --fg:#3b3226; --muted:#7a6f5d;
+  --line:#e3d9c6; --card:#fdf9f0; --accent-soft:#ece2c8; }
+[data-theme="dark"]{ --bg:#12161c; --fg:#d8dee9; --muted:#8b95a5;
+  --line:#262d38; --card:#1a202a; --accent:#60a5fa; --accent-soft:#1e3a5f;
+  --hi:#ff8a7a; --hi-bg:#3a1f1c; --sent:#c4b5fd; --sent-bg:#2a2140; }
+
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:-apple-system,"PingFang SC","Noto Sans CJK SC",Roboto,"Helvetica Neue",sans-serif;
+  overscroll-behavior:none;
+}
+button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+
+.screen{position:fixed; inset:0; display:none; flex-direction:column; background:var(--bg);}
+.screen.active{display:flex;}
+
+/* ================= 顶栏 ================= */
+.bar{
+  flex:0 0 auto; display:flex; align-items:center; gap:10px;
+  padding:12px 14px; background:var(--bg);
+  border-bottom:1px solid var(--line);
+  padding-top:calc(12px + env(safe-area-inset-top));
+}
+.brand{font-size:17px; font-weight:700; letter-spacing:.3px;}
+.bar-actions{margin-left:auto; display:flex; gap:6px;}
+.icon-btn{
+  width:38px;height:38px;border-radius:10px;display:grid;place-items:center;
+  font-size:20px;color:var(--muted);
+}
+.icon-btn:active{background:var(--card);}
+
+/* ================= 书架 ================= */
+#dropzone{
+  margin:16px; padding:26px 18px; border:2px dashed var(--line);
+  border-radius:var(--radius); background:var(--card); text-align:center;
+  transition:.2s;
+}
+#dropzone.over{border-color:var(--accent); background:var(--accent-soft);}
+.dz-icon{font-size:34px;color:var(--accent);line-height:1;}
+.dz-title{font-size:16px;font-weight:700;margin:8px 0 6px;}
+.dz-sub{font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:14px;}
+.primary{
+  background:var(--accent); color:#fff; padding:11px 22px;
+  border-radius:11px; font-size:15px; font-weight:600;
+}
+.primary:active{opacity:.85;}
+.ghost{border:1px solid var(--line); background:var(--card);
+  padding:10px 18px; border-radius:11px; font-size:14px; color:var(--fg);}
+.small{padding:9px 14px; font-size:13.5px;}
+.wide{width:100%; padding:14px; font-size:15.5px;}
+
+.shelf-meta{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:2px 18px 8px; font-size:12.5px; color:var(--muted);
+}
+#book-list{padding:0 16px 30px; overflow-y:auto; flex:1;}
+
+.book-card{
+  display:flex; gap:13px; padding:14px; margin-bottom:11px;
+  background:var(--card); border:1px solid var(--line);
+  border-radius:var(--radius); position:relative;
+}
+.book-card:active{opacity:.9;}
+.book-cover{
+  flex:0 0 52px; height:70px; border-radius:8px;
+  background:linear-gradient(145deg,var(--accent),#7c3aed);
+  display:grid; place-items:center; color:#fff; font-size:22px; font-weight:700;
+}
+.book-info{flex:1; min-width:0;}
+.book-name{font-size:15px; font-weight:650; line-height:1.4;
+  overflow:hidden; text-overflow:ellipsis; display:-webkit-box;
+  -webkit-line-clamp:2; -webkit-box-orient:vertical;}
+.book-stats{font-size:12px; color:var(--muted); margin-top:7px; line-height:1.7;}
+.book-stats b{color:var(--hi); font-weight:650;}
+.book-del{
+  position:absolute; right:8px; top:8px; width:30px; height:30px;
+  border-radius:8px; color:var(--muted); font-size:16px;
+  display:grid; place-items:center;
+}
+.book-del:active{background:var(--bg);}
+.empty-hint{text-align:center; padding:40px 30px; color:var(--muted);}
+.eh-emoji{font-size:44px; opacity:.6;}
+.empty-hint p{margin:8px 0; font-size:14.5px;}
+.eh-sub{font-size:12.5px; line-height:1.7; opacity:.8;}
+
+/* ================= 阅读器 ================= */
+.reader-bar{gap:4px;}
+.reader-title{flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;}
+#r-title{font-size:14.5px; font-weight:650; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis;}
+#r-progress{font-size:11.5px; color:var(--muted);}
+#progress-track{height:3px; background:var(--line); flex:0 0 auto;}
+#progress-fill{height:100%; width:0%; background:var(--accent); transition:width .25s;}
+
+.book-body{
+  flex:1; overflow-y:auto; padding:22px 20px 40px;
+  -webkit-overflow-scrolling:touch;
+}
+.book-body p{
+  font-size:var(--read-font); line-height:var(--read-lh);
+  margin:0 0 1.05em; text-align:justify; text-justify:inter-word;
+  word-wrap:break-word;
+}
+.book-body h1{font-size:calc(var(--read-font) * 1.5); line-height:1.4;
+  margin:1.4em 0 .7em; font-weight:700;}
+.book-body h2{font-size:calc(var(--read-font) * 1.3); line-height:1.4;
+  margin:1.3em 0 .6em; font-weight:700;}
+.book-body h3{font-size:calc(var(--read-font) * 1.15); margin:1.2em 0 .5em; font-weight:650;}
+.book-body h4,.book-body h5,.book-body h6{
+  font-size:var(--read-font); margin:1.1em 0 .5em; font-weight:650;}
+
+/* --- 生词标注 --- */
+w.hw{
+  color:var(--hi); background:var(--hi-bg);
+  border-bottom:1.5px solid var(--hi);
+  padding:0 1px; border-radius:3px; cursor:pointer;
+  font-weight:inherit;
+}
+w.hw:active{background:var(--hi); color:#fff;}
+w.hw.t5{border-bottom-style:double; border-bottom-width:3px;}
+w.hw.t4{border-bottom-style:dashed;}
+/* 超纲拓展词：用区别于考纲词的琥珀色，提示"不在所选考纲内" */
+w.hw.hw-ext{
+  color:#a06000; background:rgba(214,150,40,.14);
+  border-bottom-color:#c8871a;
+  border-bottom-style:dotted;
+}
+w.hw.hw-ext:active{background:#c8871a; color:#fff;}
+body.only-hard p{opacity:.42;}
+body.only-hard w.hw{opacity:1;}
+
+/* --- 长难句标注：仅左侧细线与角标，正文保持可读 --- */
+.sent-mark{
+  border-left:2px solid var(--sent);
+  padding-left:6px; margin-left:-8px;
+  cursor:pointer;
+}
+body.only-hard .sent-mark{border-left-color:transparent;}
+.sent-tag{
+  font-size:10px; color:var(--sent); font-weight:700;
+  vertical-align:super; margin:0 4px 0 3px; cursor:pointer;
+  border:1px solid var(--sent); border-radius:4px; padding:0 4px;
+  white-space:nowrap; letter-spacing:.2px;
+}
+.sent-tag:active{background:var(--sent); color:#fff;}
+
+.reader-foot{
+  flex:0 0 auto; display:flex; gap:8px; padding:9px 12px;
+  border-top:1px solid var(--line); background:var(--bg);
+  padding-bottom:calc(9px + env(safe-area-inset-bottom));
+}
+.foot-btn{
+  flex:1; padding:12px 6px; border-radius:11px; font-size:13.5px;
+  background:var(--card); border:1px solid var(--line); color:var(--fg);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.foot-btn:active{background:var(--line);}
+.foot-btn.on{background:var(--accent); color:#fff; border-color:var(--accent);}
+
+/* ================= 侧边面板 ================= */
+.overlay{
+  position:fixed; inset:0; background:rgba(0,0,0,.42);
+  opacity:0; pointer-events:none; transition:.25s; z-index:40;
+}
+.overlay.on{opacity:1; pointer-events:auto;}
+
+.panel{
+  position:fixed; top:0; right:0; height:100%; width:min(92vw,430px);
+  background:var(--bg); z-index:50; display:flex; flex-direction:column;
+  transform:translateX(102%); transition:transform .28s cubic-bezier(.4,0,.2,1);
+  box-shadow:-8px 0 30px rgba(0,0,0,.18);
+}
+.panel.on{transform:translateX(0);}
+.panel-head{
+  flex:0 0 auto; display:flex; align-items:flex-start; gap:10px;
+  padding:16px 14px 12px; border-bottom:1px solid var(--line);
+  background:var(--card);
+  padding-top:calc(16px + env(safe-area-inset-top));
+}
+.panel-word-wrap{flex:1; min-width:0;}
+#p-word{font-size:24px; font-weight:750; letter-spacing:.2px;
+  word-break:break-word; line-height:1.25;}
+#p-phonetic{font-size:13px; color:var(--muted); margin-top:3px;}
+#s-level{font-size:19px; font-weight:750;}
+#s-score{font-size:12.5px; color:var(--muted); margin-top:3px;}
+
+.panel-tags{display:flex; gap:7px; padding:10px 14px 0; flex-wrap:wrap;}
+.tag{font-size:11.5px; padding:3.5px 10px; border-radius:20px;
+  background:var(--hi-bg); color:var(--hi); font-weight:600;}
+.tag.ghost{background:var(--card); color:var(--muted); font-weight:500;}
+.tag.t5{background:var(--sent-bg); color:var(--sent);}
+.tag.ext{background:rgba(214,150,40,.16); color:#a06000;}
+
+.panel-body{flex:1; overflow-y:auto; padding:6px 14px 14px;}
+.sec{margin-top:16px;}
+.sec-title{
+  font-size:12.5px; font-weight:700; color:var(--muted);
+  letter-spacing:.6px; margin-bottom:9px; display:flex;
+  align-items:center; gap:7px;
+}
+.sec-hint{font-weight:400; font-size:11px; opacity:.75;
+  border:1px solid var(--line); border-radius:5px; padding:0 5px;}
+.def{font-size:15.5px; line-height:1.85; word-break:break-word;}
+.def .pos{color:var(--accent); font-weight:650; font-style:italic;
+  margin-right:4px;}
+.ctx{
+  font-size:14.5px; line-height:1.85; padding:12px 13px;
+  background:var(--card); border-left:3px solid var(--accent);
+  border-radius:0 9px 9px 0; color:var(--fg);
+}
+.ctx mark{background:var(--hi-bg); color:var(--hi); font-weight:650;
+  padding:0 2px; border-radius:3px;}
+
+.dict-actions{display:flex; gap:8px; margin-bottom:10px;}
+.dict-frame{
+  width:100%; height:0; border:1px solid var(--line); border-radius:11px;
+  background:#fff; transition:height .25s;
+}
+.dict-frame.on{height:430px;}
+.dict-note{font-size:11.5px; color:var(--muted); line-height:1.6; margin-top:8px;}
+
+.panel-foot{
+  flex:0 0 auto; padding:11px 14px;
+  padding-bottom:calc(11px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--line); background:var(--card);
+}
+#btn-star.on{background:var(--star); color:#fff;}
+
+.sent-text{font-size:15.5px; line-height:1.85; padding:12px 13px;
+  background:var(--card); border-radius:11px;}
+.feats{display:flex; flex-direction:column; gap:8px;}
+.feat{display:flex; gap:9px; align-items:baseline; font-size:14px;}
+.feat-k{flex:0 0 auto; font-size:11.5px; font-weight:700;
+  color:var(--sent); background:var(--sent-bg); padding:2.5px 9px;
+  border-radius:6px;}
+.feat-v{color:var(--fg); line-height:1.6; font-size:13.5px;}
+.template{
+  font-size:15px; line-height:1.9; padding:13px;
+  background:var(--card); border:1px dashed var(--sent);
+  border-radius:11px; margin-bottom:10px; font-style:italic;
+}
+.template .slot{color:var(--sent); font-weight:700; font-style:normal;
+  border-bottom:1.5px solid var(--sent); padding:0 3px;}
+
+/* ================= 收藏 ================= */
+.tabs{display:flex; gap:0; border-bottom:1px solid var(--line); flex:0 0 auto;}
+.tab{flex:1; padding:13px; font-size:14px; color:var(--muted);
+  border-bottom:2.5px solid transparent; font-weight:600;}
+.tab.active{color:var(--accent); border-bottom-color:var(--accent);}
+.tab span{font-size:11.5px; opacity:.8;}
+#marks-body{flex:1; overflow-y:auto; padding:12px 16px 30px;}
+
+.mk-item{
+  padding:13px; margin-bottom:10px; background:var(--card);
+  border:1px solid var(--line); border-radius:12px;
+}
+.mk-head{display:flex; align-items:baseline; gap:8px;}
+.mk-word{font-size:16.5px; font-weight:700;}
+.mk-ph{font-size:12px; color:var(--muted);}
+.mk-del{margin-left:auto; color:var(--muted); font-size:15px;
+  padding:2px 8px; border-radius:7px;}
+.mk-def{font-size:13.5px; line-height:1.75; margin-top:7px;}
+.mk-ctx{font-size:12.5px; color:var(--muted); line-height:1.65;
+  margin-top:7px; padding-left:10px; border-left:2px solid var(--line);}
+.mk-actions{display:flex; gap:8px; margin-top:10px;}
+.mk-actions button{font-size:12.5px; padding:7px 13px; border-radius:9px;}
+.mk-pattern{font-size:14.5px; line-height:1.85; font-style:italic;}
+
+/* ================= 设置面板 ================= */
+.sheet{
+  position:fixed; left:0; right:0; bottom:0; z-index:60;
+  background:var(--bg); border-radius:20px 20px 0 0;
+  box-shadow:0 -8px 30px rgba(0,0,0,.2);
+  transform:translateY(105%); transition:transform .3s cubic-bezier(.4,0,.2,1);
+  max-height:88vh; overflow-y:auto;
+}
+.sheet.on{transform:translateY(0);}
+.sheet-inner{padding:22px 20px;
+  padding-bottom:calc(22px + env(safe-area-inset-bottom));}
+.sheet-title{font-size:17px; font-weight:750; margin-bottom:20px;}
+.opt-row{display:flex; align-items:center; gap:12px; margin-bottom:18px;
+  font-size:14px;}
+.opt-row label{flex:0 0 62px; color:var(--muted); font-size:13px;}
+.opt-row input[type=range]{flex:1; accent-color:var(--accent);}
+.opt-row span{flex:0 0 34px; text-align:right; font-size:13px;
+  color:var(--muted);}
+.seg{display:flex; gap:6px; flex:1;}
+.seg button{flex:1; padding:9px 6px; border-radius:9px; font-size:13px;
+  background:var(--card); border:1px solid var(--line); color:var(--muted);}
+.seg button.on{background:var(--accent); color:#fff; border-color:var(--accent);}
+.opt-hint{font-size:12px; color:var(--muted); line-height:1.65;
+  margin:-6px 0 18px; padding:10px 12px; background:var(--card);
+  border-radius:9px;}
+
+/* ================= 提示 ================= */
+.toast{
+  position:fixed; left:50%; bottom:80px; transform:translate(-50%,20px);
+  background:rgba(30,35,45,.94); color:#fff; font-size:13.5px;
+  padding:11px 20px; border-radius:11px; z-index:99;
+  opacity:0; pointer-events:none; transition:.25s; max-width:80vw;
+  text-align:center; line-height:1.5;
+}
+.toast.on{opacity:1; transform:translate(-50%,0);}
+
+/* 加载进度 */
+.loading{text-align:center; padding:50px 20px; color:var(--muted);}
+.spinner{
+  width:34px;height:34px;margin:0 auto 14px;
+  border:3px solid var(--line); border-top-color:var(--accent);
+  border-radius:50%; animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* =====================================================================
+ *  TalkTree 专属扩展样式：AI 对话小窗 / 悬浮球 / 划词气泡 / OCR 动作
+ * ===================================================================== */
+
+.import-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+button.secondary {
+  background: var(--card, #fff);
+  color: var(--accent, #1a73e8);
+  border: 1px solid var(--border, #ccc);
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 14.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+button.secondary:active {
+  background: var(--bg, #f5f5f5);
+  transform: scale(0.98);
+}
+
+.btn-ai-action {
+  background: linear-gradient(135deg, #1e528e, #2d73be) !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 3px 8px rgba(30,82,142,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.btn-ai-action:active {
+  transform: scale(0.98);
+  filter: brightness(0.92);
+}
+
+/* 划词浮动气泡 */
+.sel-bubble {
+  position: absolute;
+  display: none;
+  background: #202124;
+  color: #fff;
+  border-radius: 20px;
+  padding: 4px 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  z-index: 1000;
+  transform: translate(-50%, -100%);
+  margin-top: -10px;
+  white-space: nowrap;
+  animation: fadeIn 0.15s ease-out;
+}
+.sel-bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: #202124 transparent transparent transparent;
+}
+.bubble-btn {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  padding: 5px 9px;
+  cursor: pointer;
+  border-radius: 12px;
+}
+.bubble-btn:active {
+  background: rgba(255,255,255,0.2);
+}
+
+/* 悬浮 AI 对话小球 */
+.fab-ai {
+  position: fixed;
+  right: 20px;
+  bottom: 84px;
+  background: linear-gradient(135deg, #2b6cb0, #3182ce);
+  color: #fff;
+  border: none;
+  border-radius: 28px;
+  padding: 10px 16px;
+  box-shadow: 0 6px 18px rgba(43,108,176,0.4);
+  display: none;
+  align-items: center;
+  gap: 8px;
+  z-index: 800;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.fab-ai:active {
+  transform: scale(0.92);
+}
+.fab-icon {
+  font-size: 18px;
+}
+
+/* TalkTree AI 研读小窗 (抽屉/半屏面板) */
+.ai-modal {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: -100%;
+  max-width: 680px;
+  margin: 0 auto;
+  height: 70vh;
+  background: var(--card, #ffffff);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  box-shadow: 0 -8px 30px rgba(0,0,0,0.25);
+  display: flex;
+  flex-direction: column;
+  z-index: 900;
+  transition: bottom 0.3s cubic-bezier(0.1, 0.9, 0.2, 1);
+  border-top: 1px solid var(--border, #eee);
+}
+.ai-modal.active {
+  bottom: 0;
+}
+.ai-modal.minimized {
+  bottom: -58vh;
+}
+
+.ai-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border, #eee);
+  background: var(--bar-bg, rgba(245,245,245,0.7));
+  backdrop-filter: blur(8px);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+}
+.ai-modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-modal-title {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--fg, #111);
+}
+.ai-modal-book-tag {
+  font-size: 11px;
+  padding: 2px 7px;
+  background: rgba(43,108,176,0.12);
+  color: #2b6cb0;
+  border-radius: 10px;
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ai-modal-controls {
+  display: flex;
+  gap: 6px;
+}
+.icon-btn.small {
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+}
+
+.ai-modal-hint-archive {
+  padding: 6px 16px;
+  font-size: 12px;
+  background: rgba(49, 130, 206, 0.08);
+  color: var(--muted, #666);
+  border-bottom: 1px solid var(--border, #f0f0f0);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ai-modal-hint-archive b {
+  color: #2b6cb0;
+}
+
+.ai-messages-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ai-msg {
+  display: flex;
+  gap: 10px;
+  max-width: 90%;
+  animation: fadeIn 0.2s ease-out;
+}
+.ai-msg-user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.ai-msg-assistant {
+  align-self: flex-start;
+}
+.ai-msg-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #edf2f7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.ai-msg-content {
+  background: var(--bg, #f7f9fa);
+  color: var(--fg, #222);
+  padding: 11px 15px;
+  border-radius: 14px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  word-break: break-word;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.ai-msg-user .ai-msg-content {
+  background: linear-gradient(135deg, #2b6cb0, #3182ce);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.ai-msg-assistant .ai-msg-content {
+  border-bottom-left-radius: 4px;
+}
+
+/* 思考过程折叠卡片 */
+.ai-thinking-box {
+  background: rgba(0,0,0,0.04);
+  border-left: 3px solid #3182ce;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--muted, #666);
+}
+.ai-thinking-summary {
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+}
+
+/* 快捷 Prompt 标签 */
+.ai-quick-prompts {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border, #eee);
+  background: var(--bar-bg, #fafafa);
+  scrollbar-width: none;
+}
+.ai-quick-prompts::-webkit-scrollbar {
+  display: none;
+}
+.ai-chip {
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #ddd);
+  border-radius: 16px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  color: var(--fg, #444);
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+.ai-chip:active {
+  background: var(--accent, #3182ce);
+  color: #fff;
+}
+
+/* 输入栏 */
+.ai-input-wrap {
+  display: flex;
+  padding: 10px 16px;
+  gap: 10px;
+  border-top: 1px solid var(--border, #eee);
+  background: var(--card, #fff);
+}
+.ai-input-wrap textarea {
+  flex: 1;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 20px;
+  padding: 8px 14px;
+  font-size: 14px;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+  background: var(--bg, #fcfcfc);
+  color: var(--fg, #111);
+}
+.ai-input-wrap textarea:focus {
+  border-color: #3182ce;
+}
+.ai-input-wrap button {
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+/* 夜间与护眼适配 */
+[data-theme="dark"] .ai-modal {
+  background: #1e1e1e;
+  border-top-color: #333;
+}
+[data-theme="dark"] .ai-msg-content {
+  background: #2d2d2d;
+  color: #e0e0e0;
+}
+[data-theme="dark"] .ai-modal-header,
+[data-theme="dark"] .ai-quick-prompts,
+[data-theme="dark"] .ai-input-wrap {
+  background: #181818;
+  border-color: #2f2f2f;
+}
+[data-theme="dark"] .ai-chip {
+  background: #262626;
+  border-color: #3a3a3a;
+  color: #bbb;
+}
+[data-theme="dark"] .ai-input-wrap textarea {
+  background: #252525;
+  color: #eee;
+  border-color: #3a3a3a;
+}
+
+/* ============================================================
+   EtymoScope 三语历史拟音与全同义词源全息视窗
+   ============================================================ */
+.etym-modal {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 86vh;
+  max-height: 86vh;
+  background: #fbf9f5;
+  color: #2b2b2b;
+  border-top: 2px solid #8c6d48;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  box-shadow: 0 -8px 28px rgba(0,0,0,0.25);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(105%);
+  transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.etym-modal.open {
+  transform: translateY(0);
+}
+.etym-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #efebe4;
+  border-bottom: 1px solid #dfd7cc;
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+}
+.etym-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #5c3a21;
+}
+.etym-speed-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+.speed-label {
+  font-size: 11px;
+  color: #795548;
+}
+.btn-speed {
+  background: #fff;
+  border: 1px solid #d7ccc8;
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 2px 6px;
+  cursor: pointer;
+  color: #5d4037;
+}
+.btn-speed.active {
+  background: #5c3a21;
+  color: #fff;
+  border-color: #5c3a21;
+  font-weight: bold;
+}
+.etym-search-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #f7f3ed;
+  border-bottom: 1px solid #e5ded4;
+}
+.etym-search-bar input {
+  flex: 1;
+  border: 1px solid #cfc4b6;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 13.5px;
+  outline: none;
+  background: #fff;
+}
+.etym-content-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Times New Roman", serif;
+}
+.etym-summary-card {
+  background: #f3ede2;
+  border: 1px solid #ded3c1;
+  border-left: 4px solid #8c6d48;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #4e342e;
+}
+.etym-sec-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #5c3a21;
+  border-bottom: 1px solid #e0d5c5;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.etym-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.etym-card {
+  background: #fff;
+  border: 1px solid #e5dcce;
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.etym-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.etym-card-word {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+.etym-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.badge-origin {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+  background: #efebe9;
+  color: #4e342e;
+}
+.badge-origin.germanic { background: #e8f5e9; color: #1b5e20; }
+.badge-origin.latin { background: #e3f2fd; color: #0d47a1; }
+.badge-origin.greek { background: #f3e5f5; color: #4a148c; }
+.badge-origin.slavic { background: #fff3e0; color: #e65100; }
+.badge-origin.church-slavic { background: #fbe9e7; color: #bf360c; }
+.badge-rarity {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f5f5f5;
+  color: #616161;
+}
+.etym-ipa-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 5px 0;
+  font-size: 13.5px;
+  flex-wrap: wrap;
+}
+.ipa-tag {
+  font-size: 11px;
+  font-weight: bold;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.ipa-tag.modern { background: #e0f2fe; color: #0369a1; }
+.ipa-tag.trad { background: #fef3c7; color: #b45309; }
+.ipa-tag.rus { background: #ffedd5; color: #c2410c; }
+.ipa-tag.cmn { background: #f1f5f9; color: #334155; }
+.ipa-val {
+  font-family: "Lucida Sans Unicode", "Doulos SIL", "Charis SIL", "Times New Roman", sans-serif;
+  font-weight: 600;
+  color: #262626;
+}
+.btn-speak-ipa {
+  background: #fafafa;
+  border: 1px solid #d4d4d4;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11.5px;
+  padding: 1px 6px;
+  margin-left: 2px;
+  color: #404040;
+}
+.btn-speak-ipa:active {
+  background: #5c3a21;
+  color: #fff;
+}
+.etym-desc {
+  font-size: 12.5px;
+  color: #555;
+  line-height: 1.5;
+  margin-top: 6px;
+  border-top: 1px dashed #eee;
+  padding-top: 6px;
+}
+
+/* 汉语历时多套拟音对比表格 */
+.cmn-reconstruct-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin-top: 6px;
+  background: #faf8f5;
+  border: 1px solid #e8e2d8;
+}
+.cmn-reconstruct-table th, .cmn-reconstruct-table td {
+  border: 1px solid #e8e2d8;
+  padding: 6px 8px;
+  text-align: left;
+}
+.cmn-reconstruct-table th {
+  background: #ede6dc;
+  color: #4e342e;
+  font-weight: 600;
+  width: 32%;
+}
+
+.ipa-pill { font-size: 11.5px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+.ipa-pill.modern { background: #e0f2fe; color: #0369a1; }
+.ipa-pill.trad { background: #fef3c7; color: #b45309; }
+.ipa-pill.rus { background: #ffedd5; color: #c2410c; }
+.btn-speak-mini { background: none; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; padding: 1px 4px; }
+
+/* 深色模式适配 */
+[data-theme="dark"] .etym-modal {
+  background: #1c1a17;
+  color: #dcd6cd;
+  border-top-color: #5c442a;
+}
+[data-theme="dark"] .etym-modal-header,
+[data-theme="dark"] .etym-search-bar {
+  background: #23201c;
+  border-color: #38322c;
+}
+[data-theme="dark"] .etym-card {
+  background: #26231f;
+  border-color: #3a342d;
+}
+[data-theme="dark"] .etym-card-word {
+  color: #f5f0e6;
+}
+[data-theme="dark"] .cmn-reconstruct-table {
+  background: #23201c;
+  border-color: #38322c;
+}
+[data-theme="dark"] .cmn-reconstruct-table th {
+  background: #2b2722;
+  color: #dfd6c8;
+}
+

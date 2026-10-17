@@ -1,0 +1,9 @@
+﻿# 本目录刻意留空。
+#
+# 原生推理库 libllama.so 由 CMake 从 ../cpp/llama-jni.cpp 现场编译产出
+# （见 app/build.gradle.kts 的 externalNativeBuild 配置），
+# 会随构建自动打进 APK 的 lib/arm64-v8a/。
+#
+# 请不要手工把 .so 拷进这里：
+# 那会同时经 jniLibs 与 CMake 两条路径进入打包，
+# 触发 duplicate library 冲突。

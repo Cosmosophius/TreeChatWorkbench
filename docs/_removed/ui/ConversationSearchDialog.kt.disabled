@@ -1,0 +1,453 @@
+package com.treechat.workbench.ui.search
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Title
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.treechat.workbench.data.db.ConversationSummary
+import com.treechat.workbench.data.db.MessageContentHitResult
+import com.treechat.workbench.data.db.SearchResults
+import com.treechat.workbench.data.db.SearchScope
+import com.treechat.workbench.data.db.SearchType
+import com.treechat.workbench.data.db.TitleSearchResult
+import com.treechat.workbench.ui.theme.AccentGold
+import com.treechat.workbench.ui.theme.AccentIceBlue
+import com.treechat.workbench.ui.theme.AccentNeonGreen
+import com.treechat.workbench.ui.theme.TextMuted
+import com.treechat.workbench.ui.theme.TextPrimary
+import com.treechat.workbench.ui.theme.TextSecondary
+
+/**
+ * 跨会话检索面板。
+ *
+ * ## 交互约定（用户明确要求）
+ * 1. **范围可选**：全部会话 / 某一个根对话。
+ * 2. **类型可选**：仅标题 / 仅消息 / 标题与消息。选「都搜」时**标题结果排在前**。
+ * 3. **标题与正文分开标注**，标题更突出。
+ *
+ * ## 为什么标题结果单独一节、且排在最前
+ * 标题是用户**自己起的名字**，表达"这条分支是关于什么"；正文命中往往只是
+ * 恰好提到了这个词。混在一个列表里用户分不清命中的是哪一个，
+ * 也难以判断点进去对不对。所以用独立小节 + 独立徽标区分。
+ */
+@Composable
+fun ConversationSearchDialog(
+    loading: Boolean,
+    results: SearchResults,
+    conversations: List<ConversationSummary>,
+    scope: SearchScope,
+    type: SearchType,
+    onScopeChange: (SearchScope) -> Unit,
+    onTypeChange: (SearchType) -> Unit,
+    onQueryChange: (String) -> Unit,
+    onOpenNode: (nodeId: String, messageId: String?) -> Unit,
+    onDismiss: () -> Unit,
+    initialQuery: String = ""
+) {
+    var query by remember { mutableStateOf(initialQuery) }
+    val focusRequester = remember { FocusRequester() }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .fillMaxWidth(0.92f)
+                .heightIn(max = 560.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF16191E))
+                .border(1.dp, Color(0xFF2C323D), RoundedCornerShape(16.dp))
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+
+                // ---- 关键词输入 ----
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = AccentNeonGreen,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    BasicTextField(
+                        value = query,
+                        onValueChange = {
+                            query = it
+                            onQueryChange(it)
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester),
+                        textStyle = TextStyle(
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontFamily = FontFamily.SansSerif
+                        ),
+                        cursorBrush = SolidColor(AccentNeonGreen),
+                        singleLine = true,
+                        decorationBox = { inner ->
+                            if (query.isEmpty()) {
+                                Text(
+                                    "搜索分支标题与对话内容…",
+                                    color = TextMuted,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            inner()
+                        }
+                    )
+                    if (query.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                query = ""
+                                onQueryChange("")
+                            },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "清除",
+                                tint = TextMuted,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+
+                // ---- 类型 + 范围选择 ----
+                FilterRow(
+                    options = SearchType.entries,
+                    selected = type,
+                    labelOf = { it.displayName },
+                    onSelect = onTypeChange
+                )
+                FilterRow(
+                    options = listOf(SearchScope.AllConversations) +
+                        conversations.map { SearchScope.OneConversation(it.id) },
+                    selected = scope,
+                    labelOf = { s ->
+                        when (s) {
+                            is SearchScope.AllConversations -> "全部对话"
+                            is SearchScope.OneConversation ->
+                                conversations.firstOrNull { it.id == s.conversationId }
+                                    ?.title?.take(14)?.ifBlank { "未命名对话" } ?: "某个对话"
+                        }
+                    },
+                    onSelect = onScopeChange
+                )
+
+                Spacer(Modifier.height(6.dp))
+
+                // ---- 结果 ----
+                when {
+                    query.isBlank() -> HintRow("输入关键词开始检索")
+                    loading -> HintRow("检索中…")
+                    results.total == 0 -> HintRow("没有找到「$query」")
+                    else -> LazyColumn(
+                        state = listState,
+                        modifier = Modifier.heightIn(max = 400.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        // 标题小节恒在正文之前（标题优先）。
+                        if (results.titles.isNotEmpty()) {
+                            item(key = "__section_title") {
+                                SectionHeader("分支标题", results.titles.size)
+                            }
+                            items(results.titles, key = { "t:" + it.nodeId }) { hit ->
+                                TitleHitRow(
+                                    hit = hit,
+                                    query = query,
+                                    onClick = { onOpenNode(hit.nodeId, null) }
+                                )
+                            }
+                        }
+                        if (results.messages.isNotEmpty()) {
+                            item(key = "__section_msg") {
+                                SectionHeader("消息内容", results.messages.size)
+                            }
+                            items(results.messages, key = { "m:" + it.messageId }) { hit ->
+                                MessageHitRow(
+                                    hit = hit,
+                                    query = query,
+                                    onClick = { onOpenNode(hit.nodeId, hit.messageId) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 横向滚动的筛选条（一排可点的胶囊）。
+ *
+ * 抽成公开组件是为了让命令面板与旧检索面板共用同一套视觉与选中态逻辑 ——
+ * 两处各写一遍，迟早会出现"同一个控件在两个地方长得不一样"。
+ */
+@Composable
+fun <T> PaletteFilterRow(
+    options: List<T>,
+    selected: T,
+    labelOf: (T) -> String,
+    onSelect: (T) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        options.forEach { opt ->
+            val isSelected = opt == selected
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isSelected) AccentIceBlue.copy(alpha = 0.18f) else Color.Transparent)
+                    .border(
+                        width = 1.dp,
+                        color = if (isSelected) AccentIceBlue else Color(0xFF2C323D),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .clickable { onSelect(opt) }
+                    .padding(horizontal = 9.dp, vertical = 5.dp)
+            ) {
+                Text(
+                    text = labelOf(opt),
+                    color = if (isSelected) AccentIceBlue else TextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String, count: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            color = AccentGold,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(text = "$count", color = TextMuted, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun HintRow(text: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 28.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = text, color = TextMuted, fontSize = 13.sp)
+    }
+}
+
+/**
+ * 标题命中行：**标题比正文更突出**（用户明确要求）。
+ *
+ * 突出体现在三处：字号更大、加粗、高亮整行底色；再配一枚说明命中方式的徽标
+ * （完全匹配 / 标题开头匹配），让用户一眼知道为什么这条排在前面。
+ */
+@Composable
+private fun TitleHitRow(
+    hit: TitleSearchResult,
+    query: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(AccentIceBlue.copy(alpha = 0.07f))
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.Title,
+            contentDescription = "分支标题",
+            tint = AccentIceBlue,
+            modifier = Modifier.size(15.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = highlight(hit.title, query),
+                color = TextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = when {
+                    hit.matchedWhole -> "完全匹配标题"
+                    hit.matchedPrefix -> "标题开头匹配"
+                    else -> "标题包含"
+                },
+                color = TextMuted,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
+
+/** 消息命中行：正文片段为次要信息，字号更小、颜色更淡。 */
+@Composable
+private fun MessageHitRow(
+    hit: MessageContentHitResult,
+    query: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            imageVector = Icons.Default.Chat,
+            contentDescription = "消息内容",
+            tint = TextMuted,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            // 所属分支 + 角色：让用户知道"这是在哪条分支、谁说的"里找到的。
+            Text(
+                text = buildString {
+                    append(if (hit.role == "user") "我" else "AI")
+                    hit.nodeTitle?.take(14)?.takeIf { it.isNotBlank() }?.let {
+                        append(" · ")
+                        append(it)
+                    }
+                },
+                color = TextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = highlight(hit.snippet, query),
+                color = TextMuted,
+                fontSize = 12.sp,
+                maxLines = 2
+            )
+        }
+    }
+}
+
+/**
+ * 把关键词在文本里高亮出来。
+ *
+ * 用 [buildAnnotatedString] 逐段拼接而不是插入标记字符串：
+ * 插入标记的做法一旦下标算错，高亮就会落在错误的字上（很难排查），
+ * 而按切片拼天然不会错位。大小写不敏感地匹配，但**原样保留原文**。
+ */
+// ⚠️ 必须标 @Composable：本文件导入了 material3 的 Text/Icon 等，
+    // 裸写的 `SpanStyle(color=...)` 在非 composable 作用域会解析到
+    // 带 Color 参数的错误重载，进而把本函数拖成 composable 而编译失败。
+    // 标上注解后作用域合法，也就不必再用完全限定名绕开歧义。
+    // 该函数只从两个 Composable 调用点使用，标注不会带来额外开销。
+    @Composable
+    private fun highlight(text: String, query: String): AnnotatedString {
+        val q = query.trim()
+        if (q.isEmpty()) return AnnotatedString(text)
+
+        val lower = text.lowercase()
+        val needle = q.lowercase()
+
+        return buildAnnotatedString {
+            var idx = 0
+            while (idx <= text.length) {
+                val at = lower.indexOf(needle, startIndex = idx)
+                if (at < 0) {
+                    if (idx < text.length) append(text.substring(idx))
+                    break
+                }
+                if (at > idx) append(text.substring(idx, at))
+                withStyle(SpanStyle(color = AccentNeonGreen, fontWeight = FontWeight.SemiBold)) {
+                    append(text.substring(at, at + needle.length))
+                }
+                idx = at + needle.length
+            }
+        }
+    }

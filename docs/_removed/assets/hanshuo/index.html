@@ -1,0 +1,3139 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="vermilion" data-dark="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>条畅 · 汉硕研读与素扉词卡工作台</title>
+<style>
+/* ==================== 1. TalkTree Material Design 3 & 素扉古典美学调色系统 ==================== */
+:root {
+  --bg: #FBF9F5;
+  --surface: #FFFFFF;
+  --surface-variant: #F3EFE6;
+  --card: #FFFFFF;
+  --primary: #9C2B23;
+  --primary-l: #FBE9E7;
+  --primary-container: #FFDAD6;
+  --on-primary-container: #410002;
+  --secondary: #5C5F58;
+  --line: #E5E0D5;
+  --text: #1E1B18;
+  --sub: #635D55;
+  --ok: #1E6B3A;
+  --ok-container: #E6F4EA;
+  --ok-txt: #134E28;
+  --acad-bg: #EBF3FA;
+  --acad-txt: #164E78;
+  --acad-border: #2B6CB0;
+  --warn: #B45309;
+  --warn-bg: #FEF3C7;
+  --tabbar-bg: rgba(251, 249, 245, 0.94);
+  --elevation-1: 0 1px 3px rgba(30, 27, 24, 0.06), 0 1px 2px rgba(30, 27, 24, 0.04);
+  --elevation-2: 0 6px 18px rgba(30, 27, 24, 0.08), 0 2px 6px rgba(30, 27, 24, 0.04);
+  --elevation-3: 0 14px 32px rgba(30, 27, 24, 0.14), 0 4px 10px rgba(30, 27, 24, 0.06);
+  --serif-font: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  --sans-font: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ease-m3-decel: cubic-bezier(0.05, 0.7, 0.1, 1.0);
+  --ease-m3-std: cubic-bezier(0.2, 0, 0, 1);
+}
+
+html[data-theme="jade"] {
+  --primary: #1F6E5A; --primary-l: #E6F4F0; --primary-container: #C6EBE0; --on-primary-container: #06382C;
+}
+html[data-theme="indigo"] {
+  --primary: #2B4C7E; --primary-l: #EBF1F8; --primary-container: #D3E3FD; --on-primary-container: #0B2545;
+}
+html[data-theme="amber"] {
+  --primary: #8D4E17; --primary-l: #FDF3E7; --primary-container: #FFCCAA; --on-primary-container: #331800;
+}
+
+html[data-dark="dark"] {
+  --bg: #141615;
+  --surface: #1C1F1E;
+  --surface-variant: #252928;
+  --card: #1F2422;
+  --primary: #FFB4AB;
+  --primary-l: #3B1D1A;
+  --primary-container: #5C231E;
+  --on-primary-container: #FFDAD6;
+  --line: #2E3432;
+  --text: #E6E3DD;
+  --sub: #9E9A93;
+  --ok: #6DD58C;
+  --ok-container: #143822;
+  --ok-txt: #A8DAB5;
+  --acad-bg: #172A3A;
+  --acad-txt: #8AC4FF;
+  --acad-border: #3882F6;
+  --warn-bg: #3B280C;
+  --tabbar-bg: rgba(24, 27, 26, 0.94);
+  --elevation-1: 0 1px 4px rgba(0,0,0,0.4);
+  --elevation-2: 0 6px 20px rgba(0,0,0,0.5);
+  --elevation-3: 0 16px 36px rgba(0,0,0,0.65);
+}
+
+html[data-dark="amoled"] {
+  --bg: #000000;
+  --surface: #0A0A0A;
+  --surface-variant: #141414;
+  --card: #0E0E0E;
+  --line: #222222;
+  --text: #EAE6DF;
+  --sub: #8A8680;
+  --tabbar-bg: rgba(8, 8, 8, 0.96);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: var(--sans-font);
+  font-size: 14.5px; line-height: 1.6;
+  user-select: none; -webkit-user-select: none;
+}
+
+/* ==================== 2. 主视图 5-Tab 轨道与頂部栏 ==================== */
+.viewpager-container {
+  width: 100vw; height: calc(100vh - 66px);
+  overflow: hidden; position: relative;
+}
+.viewpager-track {
+  display: flex; width: 500vw; height: 100%;
+  transition: transform 320ms var(--ease-m3-std);
+  will-change: transform;
+}
+.viewpager-page {
+  width: 100vw; height: 100%;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding-bottom: 36px;
+}
+
+.top-appbar {
+  background: var(--surface); color: var(--text);
+  padding: 10px 14px; position: sticky; top: 0; z-index: 90;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.top-appbar h1 {
+  font-size: 16.5px; margin: 0; font-weight: 700; flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.poetry-serif {
+  font-family: var(--serif-font);
+  letter-spacing: 0.5px;
+}
+
+.m3-chip-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--surface-variant); color: var(--text);
+  border: 1px solid var(--line);
+  padding: 6px 11px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: background 150ms, transform 100ms;
+}
+.m3-chip-btn:active { transform: scale(0.96); }
+.m3-chip-btn.primary {
+  background: var(--primary-container); color: var(--on-primary-container);
+  border-color: transparent;
+}
+.m3-icon { width: 17px; height: 17px; fill: currentColor; flex-shrink: 0; }
+
+.container { padding: 14px; max-width: 820px; margin: 0 auto; }
+
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 18px; padding: 15px; margin-bottom: 12px;
+  box-shadow: var(--elevation-1);
+}
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: var(--primary); color: #fff;
+  border: none; border-radius: 12px; padding: 9px 15px;
+  font-size: 13.5px; font-weight: 600; cursor: pointer;
+  transition: opacity 150ms, transform 100ms;
+}
+html[data-dark="dark"] .btn, html[data-dark="amoled"] .btn {
+  color: #2D0906;
+}
+.btn:active { transform: scale(0.97); }
+.btn.ghost {
+  background: var(--surface-variant); color: var(--text);
+  border: 1px solid var(--line);
+}
+.btn.danger {
+  background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5;
+}
+.btn.sm { padding: 5px 10px; font-size: 12px; border-radius: 9px; }
+
+/* ==================== 3. 素扉卡片 (SuFei Card) 舞台与 Container Transform 原位膨胀系统 ==================== */
+.sufei-stage-wrap {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: space-between;
+  min-height: calc(100vh - 135px);
+  padding: 12px 16px 16px;
+}
+.sufei-deck-switcher {
+  display: inline-flex; background: var(--surface-variant);
+  border-radius: 999px; padding: 3px; border: 1px solid var(--line);
+  margin-bottom: 8px;
+}
+.sufei-deck-btn {
+  border: none; background: transparent; color: var(--sub);
+  padding: 5px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; transition: all 200ms;
+}
+.sufei-deck-btn.active {
+  background: var(--surface); color: var(--primary);
+  box-shadow: var(--elevation-1);
+}
+
+.sufei-hero-card {
+  width: 100%; max-width: 440px;
+  min-height: 410px; max-height: 64vh;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  padding: 26px 24px;
+  box-shadow: var(--elevation-2);
+  display: flex; flex-direction: column; justify-content: space-between;
+  position: relative; overflow: hidden;
+  cursor: pointer;
+  /* 关键：允许纵向原生滚动穿透，横滑由状态机接管，彻底消除触控死锁 */
+  touch-action: pan-y;
+  transition: transform 280ms var(--ease-m3-decel), box-shadow 280ms ease, opacity 220ms ease;
+}
+.sufei-hero-card.swiping {
+  transition: none !important;
+}
+/* 卡片宣纸暗纹装饰 */
+.sufei-hero-card::before {
+  content: ""; position: absolute; top: -40px; right: -40px;
+  width: 140px; height: 140px; border-radius: 50%;
+  background: radial-gradient(circle, var(--primary-l) 0%, transparent 70%);
+  opacity: 0.7; pointer-events: none;
+}
+
+.sufei-seal-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  align-self: flex-start;
+  padding: 4px 11px; border-radius: 8px;
+  background: var(--primary-l); color: var(--primary);
+  border: 1px solid var(--primary-container);
+  font-family: var(--serif-font);
+  font-size: 12px; font-weight: 700; letter-spacing: 0.5px;
+}
+.sufei-card-headword {
+  font-family: var(--serif-font);
+  font-size: 31px; font-weight: 700; line-height: 1.32;
+  margin: 18px 0 10px; color: var(--text);
+}
+.sufei-card-phonetic {
+  font-size: 14px; color: var(--primary); font-family: monospace;
+  margin-top: -6px; margin-bottom: 10px;
+}
+.sufei-card-digest {
+  font-family: var(--serif-font);
+  font-size: 15.5px; line-height: 1.85; color: var(--text);
+  opacity: 0.92;
+  display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical;
+  overflow: hidden;
+  user-select: text; -webkit-user-select: text;
+}
+.sufei-card-footer {
+  margin-top: 18px; padding-top: 12px;
+  border-top: 1px dashed var(--line);
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; color: var(--sub);
+}
+
+.sufei-controls-row {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  margin-top: 12px; width: 100%; max-width: 440px;
+}
+
+/* ==================== 4. 素扉 Container Transform 原位膨胀全屏详情层 ==================== */
+.sufei-morph-scrim {
+  position: fixed; inset: 0;
+  background: rgba(15, 14, 12, 0.42);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  z-index: 600; opacity: 0; pointer-events: none;
+  transition: opacity 320ms var(--ease-m3-std);
+}
+.sufei-morph-scrim.open {
+  opacity: 1; pointer-events: auto;
+}
+
+.sufei-morph-container {
+  position: fixed;
+  z-index: 610;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  box-shadow: var(--elevation-3);
+  overflow: hidden;
+  display: none; flex-direction: column;
+  /* 初始原位矩形变量（由 getBoundingClientRect 动态注入） */
+  top: var(--m-top, 120px);
+  left: var(--m-left, 20px);
+  width: var(--m-w, calc(100vw - 40px));
+  height: var(--m-h, 420px);
+  border-radius: var(--m-r, 28px);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    top 340ms var(--ease-m3-decel),
+    left 340ms var(--ease-m3-decel),
+    width 340ms var(--ease-m3-decel),
+    height 340ms var(--ease-m3-decel),
+    border-radius 340ms var(--ease-m3-decel),
+    opacity 180ms ease;
+}
+.sufei-morph-container.morph-mounted {
+  display: flex;
+  opacity: 1;
+}
+.sufei-morph-container.morph-expanded {
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0px !important;
+  border-color: transparent;
+}
+.sufei-morph-container.morph-interactive {
+  pointer-events: auto;
+}
+
+.sufei-morph-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding: 20px 20px 60px;
+  max-width: 780px; width: 100%; margin: 0 auto;
+  user-select: text; -webkit-user-select: text;
+}
+
+/* ==================== 5. 次级全屏页面 (章节题目、真题卷面、全真模考、挖空背诵) ==================== */
+.sub-page {
+  position: fixed; inset: 0;
+  background: var(--bg); z-index: 500;
+  display: flex; flex-direction: column;
+  opacity: 0; pointer-events: none;
+  transform: translate3d(0, 28px, 0) scale(0.98);
+  transition: transform 280ms var(--ease-m3-decel), opacity 240ms var(--ease-m3-std);
+}
+.sub-page.active {
+  opacity: 1; pointer-events: auto;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+.sub-page-scroll {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  touch-action: pan-y; padding-bottom: 40px;
+}
+
+/* ==================== 6. 名词解释四层古典解析与同文本超链接 ==================== */
+.layer {
+  padding: 12px 14px; border-radius: 14px; margin-top: 10px;
+  background: var(--surface-variant); border-left: 4px solid var(--primary);
+  font-size: 14.5px; line-height: 1.75;
+  user-select: text; -webkit-user-select: text;
+}
+.layer.core { background: var(--primary-l); border-left-color: var(--primary); }
+.layer.examples { background: var(--ok-container); border-left-color: var(--ok); color: var(--ok-txt); }
+.layer.academic { background: var(--acad-bg); border-left-color: var(--acad-border); color: var(--acad-txt); }
+.layer .lab {
+  font-family: var(--serif-font);
+  font-weight: 700; font-size: 13px; margin-bottom: 4px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.acad-src {
+  display: inline-block; font-size: 11.5px; padding: 2px 7px;
+  border-radius: 6px; background: rgba(0,0,0,0.07); margin-top: 4px;
+}
+
+.term-link {
+  color: var(--primary); font-weight: 600;
+  border-bottom: 1.5px dotted var(--primary);
+  padding: 0 2px; border-radius: 4px; cursor: pointer;
+  transition: all 160ms ease;
+}
+.term-link:hover, .term-link:active {
+  background: var(--primary-container); color: var(--on-primary-container);
+}
+
+/* 本地权威词库：实线超链接 */
+.term-link.term-local {
+  border-bottom: 1.5px solid var(--primary);
+}
+
+/* AI 动态实体识别：紫色虚线超链接，带学术微光标志 */
+.term-link.term-dynamic {
+  color: #7c3aed;
+  border-bottom: 1.5px dashed #8b5cf6;
+  background: rgba(139, 92, 246, 0.08);
+  padding: 0 3px;
+}
+.term-link.term-dynamic::after {
+  content: '✦';
+  font-size: 9px;
+  vertical-align: super;
+  margin-left: 1px;
+  opacity: 0.85;
+}
+.term-link.term-dynamic:hover, .term-link.term-dynamic:active {
+  background: #ede9fe; color: #5b21b6;
+  border-bottom-style: solid;
+}
+
+/* 视觉系带 (Visual Tether / Highlight Link)：脉冲呼吸闪烁 */
+@keyframes tetherPulse {
+  0% { box-shadow: 0 0 0 0 rgba(156, 43, 35, 0.65); background-color: var(--primary-container); }
+  50% { box-shadow: 0 0 0 7px rgba(156, 43, 35, 0); background-color: rgba(255, 218, 214, 0.45); }
+  100% { box-shadow: 0 0 0 0 rgba(156, 43, 35, 0.65); background-color: var(--primary-container); }
+}
+.tether-active {
+  animation: tetherPulse 1.5s infinite !important;
+  border-radius: 4px !important;
+  outline: 2px solid var(--primary) !important;
+  position: relative;
+  z-index: 5;
+}
+
+/* 小窗可点击溯源面包屑 */
+.win-breadcrumbs {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 10px; font-size: 11px;
+  background: var(--surface-variant);
+  border-bottom: 1px solid var(--line);
+  color: var(--sub); white-space: nowrap; overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.win-crumb-item {
+  color: var(--sub); cursor: pointer; text-decoration: underline; text-decoration-style: dotted;
+  transition: color 150ms;
+}
+.win-crumb-item:hover { color: var(--primary); }
+.win-crumb-item.active {
+  color: var(--primary); font-weight: 700; text-decoration: none; cursor: default;
+}
+.win-crumb-sep { opacity: 0.5; font-size: 9px; }
+
+/* 小窗标题栏反哺按钮 */
+.mac-btn-merge {
+  border: 1px solid var(--primary);
+  background: var(--primary-l); color: var(--primary);
+  font-size: 11px; font-weight: 700; border-radius: 999px;
+  padding: 2px 8px; cursor: pointer; margin-left: auto;
+  display: inline-flex; align-items: center; gap: 3px;
+  white-space: nowrap; transition: all 160ms ease;
+}
+.mac-btn-merge:hover, .mac-btn-merge:active {
+  background: var(--primary); color: #fff;
+}
+
+/* 支线洞察卡片 (Branch Insight Card) */
+.branch-insight-bubble {
+  margin: 10px 0; padding: 10px 14px; border-radius: 12px;
+  background: #f0fdf4; border: 1.5px solid #86efac;
+  border-left: 4px solid #16a34a;
+  color: #14532d; font-size: 13px; line-height: 1.6;
+  box-shadow: var(--elevation-1);
+}
+.branch-insight-bubble .insight-tag {
+  font-size: 10.5px; font-weight: 700; background: #dcfce7;
+  color: #15803d; padding: 1px 6px; border-radius: 4px;
+  display: inline-block; margin-bottom: 4px;
+}
+.branch-insight-bubble .insight-quote {
+  font-family: var(--serif-font); font-size: 13.5px; margin: 4px 0 6px;
+  color: #166534; font-weight: 500;
+}
+.branch-insight-bubble .insight-meta {
+  font-size: 11px; color: #4ade80; display: flex; justify-content: space-between;
+}
+
+.rag-cite-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px; font-weight: 700;
+  background: var(--acad-bg); color: var(--acad-txt);
+  border: 1px solid var(--acad-border);
+  padding: 2px 8px; border-radius: 6px; margin: 2px 4px 2px 0;
+}
+
+/* ==================== 7. Mac 悬浮小窗与左右侧边 Dock 停靠坞 ==================== */
+.floating-win {
+  position: fixed; z-index: 700;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 16px; box-shadow: var(--elevation-3);
+  display: flex; flex-direction: column; overflow: hidden;
+  min-width: 260px; min-height: 200px;
+}
+.floating-win.is-fullscreen {
+  left: 0 !important; top: 0 !important;
+  width: 100vw !important; height: 100vh !important;
+  border-radius: 0 !important;
+}
+.mac-titlebar {
+  background: var(--surface-variant); padding: 9px 12px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--line); cursor: grab;
+  touch-action: none;
+}
+.mac-dots { display: flex; gap: 7px; align-items: center; }
+.mac-dot {
+  width: 13px; height: 13px; border-radius: 50%; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.mac-dot.close { background: #FF5F56; }
+.mac-dot.min { background: #FFBD2E; }
+.mac-dot.max { background: #27C93F; }
+.mac-title {
+  font-size: 13px; font-weight: 700; flex: 1; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.floating-body {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  touch-action: pan-y; padding: 12px 14px;
+  user-select: text; -webkit-user-select: text;
+}
+.win-resize-handle { position: absolute; z-index: 10; touch-action: none; }
+.win-resize-handle[data-dir="r"] { top: 0; right: 0; width: 10px; height: 100%; cursor: ew-resize; }
+.win-resize-handle[data-dir="b"] { bottom: 0; left: 0; width: 100%; height: 10px; cursor: ns-resize; }
+.win-resize-handle[data-dir="rb"] { bottom: 0; right: 0; width: 20px; height: 20px; cursor: nwse-resize; }
+
+.side-dock {
+  position: fixed; top: 45%; transform: translateY(-50%);
+  z-index: 680; display: flex; flex-direction: column; gap: 6px;
+  pointer-events: none;
+}
+.side-dock.right { right: 6px; align-items: flex-end; }
+.side-dock.left { left: 6px; align-items: flex-start; }
+.dock-pill {
+  pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--primary); border-radius: 999px;
+  padding: 5px 11px; font-size: 12px; font-weight: 600;
+  box-shadow: var(--elevation-2); cursor: pointer;
+}
+
+/* ==================== 8. 可拖动思维导图词条卡片画布 (TalkTree Graph Workbench) ==================== */
+.mindmap-stage {
+  position: relative; width: 100%; height: 480px;
+  background:
+    radial-gradient(circle, var(--line) 1px, transparent 1px);
+  background-size: 20px 20px;
+  border: 1px solid var(--line); border-radius: 18px;
+  overflow: hidden; touch-action: none;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.04);
+}
+.mindmap-svg-layer {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 1;
+}
+.mindmap-nodes-layer {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  z-index: 2; transform-origin: 0 0;
+}
+.mm-node-card {
+  position: absolute; width: 195px;
+  background: var(--card); border: 1.5px solid var(--line);
+  border-radius: 14px; padding: 10px 12px;
+  box-shadow: var(--elevation-2);
+  cursor: grab; user-select: none; touch-action: none;
+  transition: box-shadow 150ms, border-color 150ms;
+}
+.mm-node-card.root-node {
+  border-color: var(--primary);
+  background: var(--primary-l);
+  width: 210px;
+}
+.mm-node-card.dragging {
+  box-shadow: var(--elevation-3);
+  border-color: var(--primary);
+  z-index: 99 !important;
+}
+.mm-node-title {
+  font-family: var(--serif-font);
+  font-weight: 700; font-size: 14px; color: var(--text);
+  margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;
+}
+.mm-node-snippet {
+  font-size: 11.5px; color: var(--sub); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mm-node-actions {
+  display: flex; gap: 6px; margin-top: 7px; padding-top: 6px;
+  border-top: 1px dashed var(--line); font-size: 11px;
+}
+.mm-node-act {
+  color: var(--primary); font-weight: 600; cursor: pointer;
+}
+
+/* 思维导图语义缩放 (Semantic Zoom: scale < 0.6f 时紧凑抽象呈现) */
+.mindmap-stage.semantic-compact .mm-node-card {
+  width: 145px !important;
+  min-height: auto !important;
+  padding: 6px 9px !important;
+  border-radius: 10px !important;
+}
+.mindmap-stage.semantic-compact .mm-node-title {
+  font-size: 12.5px !important;
+  margin-bottom: 0 !important;
+}
+.mindmap-stage.semantic-compact .mm-node-snippet,
+.mindmap-stage.semantic-compact .mm-node-actions {
+  display: none !important;
+}
+.mindmap-controls {
+  position: absolute; right: 12px; bottom: 12px; z-index: 10;
+  display: flex; align-items: center; gap: 4px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 20px; padding: 3px 8px; box-shadow: var(--elevation-2);
+}
+.mm-ctrl-btn {
+  border: none; background: transparent; font-size: 13px; font-weight: 700;
+  color: var(--text); padding: 3px 7px; border-radius: 10px; cursor: pointer;
+  transition: background 150ms;
+}
+.mm-ctrl-btn:hover { background: var(--surface-variant); }
+.mm-zoom-level {
+  font-size: 11px; font-weight: 600; color: var(--sub); min-width: 42px; text-align: center;
+}
+
+/* ==================== 9. 底部 Material 3 NavigationBar ==================== */
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 66px;
+  background: var(--tabbar-bg);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-around;
+  z-index: 400; padding-bottom: env(safe-area-inset-bottom);
+}
+.tabbar-item {
+  flex: 1; border: none; background: transparent; color: var(--sub);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 6px 0; cursor: pointer; font-size: 11.5px; font-weight: 600;
+}
+.tabbar-pill {
+  padding: 3px 16px; border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 200ms var(--ease-m3-std);
+}
+.tabbar-item.on { color: var(--primary); }
+.tabbar-item.on .tabbar-pill {
+  background: var(--primary-container); color: var(--on-primary-container);
+}
+
+/* 模态框与组件 */
+.modal-mask {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  z-index: 800; display: none; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.modal-mask.active { display: flex; }
+.modal-card {
+  background: var(--surface); border-radius: 24px;
+  width: 100%; max-width: 520px; max-height: 85vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: var(--elevation-3); border: 1px solid var(--line);
+}
+.modal-header {
+  padding: 14px 18px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between;
+  font-weight: 700; font-size: 16px;
+}
+.modal-body {
+  padding: 16px 18px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+
+.input, select.input, textarea.input {
+  width: 100%; padding: 9px 12px; border-radius: 11px;
+  border: 1px solid var(--line); background: var(--surface-variant);
+  color: var(--text); font-size: 13.5px; outline: none;
+}
+.opt {
+  padding: 10px 13px; border-radius: 12px; border: 1px solid var(--line);
+  margin-bottom: 8px; cursor: pointer; background: var(--surface-variant);
+}
+.opt.selected {
+  border-color: var(--primary); background: var(--primary-l); font-weight: 600;
+}
+.blank {
+  display: inline-block; min-width: 48px; border-bottom: 2px solid var(--primary);
+  background: var(--primary-l); color: transparent; border-radius: 4px;
+  padding: 0 4px; cursor: pointer; transition: color 180ms;
+}
+.blank.revealed { color: var(--primary); font-weight: 700; }
+
+.app-toast {
+  position: fixed; bottom: 82px; left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(28, 25, 23, 0.92); color: #fff;
+  padding: 9px 18px; border-radius: 999px; font-size: 13px;
+  z-index: 999; opacity: 0; pointer-events: none;
+  transition: opacity 200ms, transform 200ms;
+}
+.app-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- ==================== 1. 主视图 5-Tab 滑动视口 ==================== -->
+<div class="viewpager-container">
+  <div class="viewpager-track" id="viewpager-track">
+
+    <!-- ==================== Tab 0: 素扉沉浸卡片诵读 (支持汉硕词卡 + 英语阅读器单词本双卡组) ==================== -->
+    <div class="viewpager-page" id="page-sufei">
+      <div class="top-appbar">
+        <button class="m3-chip-btn" onclick="exitToTalkTree()" title="返回条畅主工作台">
+          <svg class="m3-icon" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+          <span>条畅</span>
+        </button>
+        <h1 class="poetry-serif">素扉 · 沉浸研读卡</h1>
+        <button class="m3-chip-btn" onclick="openSearchModal()">
+          <svg class="m3-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <span id="term-count-badge">词条</span>
+        </button>
+        <button class="m3-chip-btn" onclick="openThemeModal()" title="外观与配色">🎨</button>
+      </div>
+
+      <div class="sufei-stage-wrap">
+        <!-- 卡组切换器：保留英语阅读器生词本接口 -->
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center">
+          <div class="sufei-deck-switcher">
+            <button class="sufei-deck-btn active" id="deck-btn-hanshuo" onclick="switchSufeiDeck('hanshuo')">🎋 汉硕核心名解</button>
+            <button class="sufei-deck-btn" id="deck-btn-vocab" onclick="switchSufeiDeck('english_reader')">🇬🇧 原版书生词本</button>
+          </div>
+          <span id="hero-progress-txt" style="font-size:12px;color:var(--sub)">1 / 1</span>
+        </div>
+
+        <!-- 素扉核心卡片：点击触发原位 Container Transform 沉浸膨胀，左右划动切卡 -->
+        <div id="active-hero-card" class="sufei-hero-card" onclick="onHeroCardTap(event)">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span class="sufei-seal-badge" id="hero-card-badge">现代汉语通论</span>
+              <span style="font-size:12px;color:var(--sub)" id="hero-card-meta">★★★★ · 5分</span>
+            </div>
+            <div class="sufei-card-headword" id="hero-card-stem">加载中…</div>
+            <div class="sufei-card-phonetic" id="hero-card-phonetic" style="display:none"></div>
+            <div class="sufei-card-digest" id="hero-card-digest">点击卡片原位沉浸展开完整四层学术释义，左右滑动切换词条。</div>
+          </div>
+          <div class="sufei-card-footer">
+            <span>✨ 轻点卡片原位沉浸展开详情</span>
+            <span style="color:var(--primary);font-weight:600">⇄ 左右滑切卡</span>
+          </div>
+        </div>
+
+        <!-- 底部切卡控制栏 -->
+        <div class="sufei-controls-row">
+          <button class="btn ghost" onclick="prevHeroCard()">← 上一卡</button>
+          <button class="btn ghost" onclick="randomHeroCard()">🎲 随机抽卡</button>
+          <button class="btn primary" onclick="openSufeiImmersiveDetail()">📖 沉浸展开</button>
+          <button class="btn ghost" onclick="nextHeroCard()">下一卡 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== Tab 1: 教材章节目录 (含分篇章出题/思维导图/可删除入口) ==================== -->
+    <div class="viewpager-page" id="page-browse">
+      <div class="top-appbar">
+        <h1>📚 教材章节与分篇研读</h1>
+        <button class="m3-chip-btn primary" onclick="switchTab(3)">🧠 RAG工作台</button>
+      </div>
+      <div class="container" id="browse-list"></div>
+    </div>
+
+    <!-- ==================== Tab 2: 历年真题与全真模考 ==================== -->
+    <div class="viewpager-page" id="page-zhenti">
+      <div class="top-appbar">
+        <h1>📜 历年真题卷与全真模考</h1>
+        <button class="m3-chip-btn" onclick="startRandomMockExam()">⚡ 随机模考</button>
+      </div>
+      <div class="container" id="zhenti-list"></div>
+    </div>
+
+    <!-- ==================== Tab 3: 方案A · 本地大模型 + TalkTree RAG 学术中枢 ==================== -->
+    <div class="viewpager-page" id="page-rag-hub">
+      <div class="top-appbar">
+        <h1>🧠 本地大模型 · RAG 与思维导图</h1>
+        <span class="m3-chip-btn primary" id="rag-engine-status-pill" onclick="checkLocalLlmStatus()">🟢 方案A: TalkTree RAG</span>
+      </div>
+      <div class="container">
+
+        <!-- 子功能导航胶囊 -->
+        <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin-bottom:10px">
+          <button class="m3-chip-btn primary" id="rag-subtab-btn-0" onclick="switchRagSubTab(0)">① 原文精准名解</button>
+          <button class="m3-chip-btn" id="rag-subtab-btn-1" onclick="switchRagSubTab(1)">② 论述/简答重要性推理</button>
+          <button class="m3-chip-btn" id="rag-subtab-btn-2" onclick="switchRagSubTab(2)">③ 分档分篇章出题</button>
+          <button class="m3-chip-btn" id="rag-subtab-btn-3" onclick="switchRagSubTab(3)">④ 可拖动思维导图卡</button>
+        </div>
+
+        <!-- 子面板 0: 原文精准名词解释 -->
+        <div id="rag-subpanel-0" class="card">
+          <div style="font-weight:700;font-size:15.5px;margin-bottom:6px">🔍 本地大模型 + TalkTree RAG 精准原文名词解释</div>
+          <div style="font-size:12.5px;color:var(--sub);margin-bottom:12px">
+            直接检索 TalkTree 本地 SQLite 知识库切片（BM25 / N-Gram）与内置教材图谱，由端侧 GGUF 大模型生成带段落级出处引用的四层定义，所有关联术语均可点击超链接打开悬浮小窗。
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <input id="rag-term-input" class="input" placeholder="输入专有名词，如：音位变体、把字句、语素、历史比较法…" value="音位">
+            <button class="btn" style="white-space:nowrap" onclick="runRagTermExplain()">精准溯源</button>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+            <span style="font-size:12px;color:var(--sub)">高频示例：</span>
+            <span class="term-link" onclick="document.getElementById('rag-term-input').value='语音';runRagTermExplain()">语音</span>
+            <span class="term-link" onclick="document.getElementById('rag-term-input').value='音位';runRagTermExplain()">音位</span>
+            <span class="term-link" onclick="document.getElementById('rag-term-input').value='语素';runRagTermExplain()">语素</span>
+            <span class="term-link" onclick="document.getElementById('rag-term-input').value='主谓谓语句';runRagTermExplain()">主谓谓语句</span>
+            <span class="term-link" onclick="document.getElementById('rag-term-input').value='语义场';runRagTermExplain()">语义场</span>
+            <span class="term-link" onclick="document.getElementById('rag-term-input').value='六书';runRagTermExplain()">六书</span>
+          </div>
+          <div id="rag-term-result"></div>
+        </div>
+
+        <!-- 子面板 1: 论述题与简答题重要性推理 -->
+        <div id="rag-subpanel-1" class="card" style="display:none">
+          <div style="font-weight:700;font-size:15.5px;margin-bottom:6px">⚖️ 论述题与简答题重要性推理引擎</div>
+          <div style="font-size:12.5px;color:var(--sub);margin-bottom:12px">
+            结合历年真题考频、教材理论枢纽度与本地 RAG 文档权重，推理指定篇章/考点的命题重要度星级、简答题标准踩分矩阵及论述题跨章节综合切入框架。
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <select id="imp-book-select" class="input" onchange="updateChapterSelect('imp-book-select','imp-chapter-select')"></select>
+            <select id="imp-chapter-select" class="input"></select>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <input id="imp-topic-input" class="input" placeholder="可选：输入具体论述/简答议题（留空则推理整章核心考点）">
+            <button class="btn" style="white-space:nowrap" onclick="runRagImportanceReasoning()">开始推理</button>
+          </div>
+          <div id="rag-importance-result"></div>
+        </div>
+
+        <!-- 子面板 2: 分档分篇章智能出题 -->
+        <div id="rag-subpanel-2" class="card" style="display:none">
+          <div style="font-weight:700;font-size:15.5px;margin-bottom:6px">🎯 分档 · 分篇章智能出题系统</div>
+          <div style="font-size:12.5px;color:var(--sub);margin-bottom:12px">
+            基于选定教材篇章与难度分档（基础巩固 / 强化拔高 / 冲刺压轴），调用本地大模型与 RAG 原文生成高质量考题，支持一键并入本地题库参与刷题与挖空背诵。
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <select id="gen-book-select" class="input" onchange="updateChapterSelect('gen-book-select','gen-chapter-select')"></select>
+            <select id="gen-chapter-select" class="input"></select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+            <select id="gen-tier-select" class="input">
+              <option value="1">⭐ 基础巩固档 (L1)</option>
+              <option value="2" selected>⭐⭐ 强化拔高档 (L2)</option>
+              <option value="3">⭐⭐⭐ 冲刺压轴档 (L3)</option>
+            </select>
+            <select id="gen-type-select" class="input">
+              <option value="名词解释">名词解释</option>
+              <option value="简答题">简答题</option>
+              <option value="论述题">论述题</option>
+              <option value="单项选择题">单项选择题</option>
+              <option value="辨析题">辨析题</option>
+            </select>
+            <button class="btn" onclick="runRagTieredQuestionGen()">⚡ 立即出题</button>
+          </div>
+          <div id="rag-gen-result"></div>
+        </div>
+
+        <!-- 子面板 3: 分篇章生成 TalkTree 可拖动思维导图词条卡片 -->
+        <div id="rag-subpanel-3" class="card" style="display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+            <div>
+              <div style="font-weight:700;font-size:15.5px">🗺️ 分篇章可拖动思维导图词条卡片</div>
+              <div style="font-size:12px;color:var(--sub)">单指自由拖拽词条卡片、点击卡片内超链接弹窗、一键同步至条畅原生思维树画布</div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn sm ghost" onclick="resetMindMapLayout()">重置排布</button>
+              <button class="btn sm" onclick="syncMindMapToTalkTree()">🌳 同步至条畅思维树</button>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:10px">
+            <select id="mm-book-select" class="input" onchange="updateChapterSelect('mm-book-select','mm-chapter-select')"></select>
+            <select id="mm-chapter-select" class="input"></select>
+            <button class="btn sm" onclick="buildChapterMindMapFromUI()">生成导图</button>
+          </div>
+          <div class="mindmap-stage" id="mindmap-stage">
+            <svg class="mindmap-svg-layer" id="mindmap-svg"></svg>
+            <div class="mindmap-nodes-layer" id="mindmap-nodes"></div>
+            <div class="mindmap-controls">
+              <button class="mm-ctrl-btn" onclick="zoomMindMap(-0.15)" title="缩小导图 (降至60%以下触发语义紧凑大纲)">−</button>
+              <span class="mm-zoom-level" id="mm-zoom-display" onclick="setMindMapScale(1.0)" title="点击恢复100%">100%</span>
+              <button class="mm-ctrl-btn" onclick="zoomMindMap(0.15)" title="放大导图">+</button>
+              <button class="mm-ctrl-btn" onclick="setMindMapScale(1.0)" title="重置缩放">↺</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ==================== Tab 4: 题库沙箱管理 (内置题库可删除) + 我的收藏 + 英语单词本接口 ==================== -->
+    <div class="viewpager-page" id="page-sandbox">
+      <div class="top-appbar">
+        <h1>🗂️ 题库管理与收藏夹</h1>
+      </div>
+      <div class="container">
+
+        <!-- 内置题库可删除与沙箱治理控制台 -->
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-weight:700;font-size:15.5px">🛡️ 题库沙箱存储管理（内置题库可删除）</div>
+            <span class="sufei-seal-badge" id="sandbox-status-badge">状态检测中</span>
+          </div>
+          <div style="font-size:12.5px;color:var(--sub);margin-bottom:12px" id="sandbox-stats-desc">
+            正在统计当前沙箱题库容量…
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <button class="btn danger" onclick="deleteBuiltinQuestionBank()">🗑️ 删除清空内置题库</button>
+            <button class="btn ghost" onclick="restoreBuiltinQuestionBank()">🔄 恢复官方内置题库 (2430题)</button>
+            <button class="btn ghost" onclick="openImportBankModal()">📥 导入自定义题库</button>
+            <button class="btn ghost" onclick="exportCurrentBank()">📤 导出题库 JSON</button>
+          </div>
+        </div>
+
+        <!-- 英语原版书阅读器 FlashcardBridge 接口控制台 -->
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div style="font-weight:700;font-size:15px">🇬🇧 英语原版书阅读器 · 单词本联动接口 (FlashcardBridge)</div>
+            <span style="font-size:12px;color:var(--primary);font-weight:700" id="vocab-bridge-count">0 词</span>
+          </div>
+          <div style="font-size:12.5px;color:var(--sub);margin-bottom:10px">
+            已预留 <code>window.FlashcardBridge</code> 与原生 <code>com.treechat.workbench.flashcard.FlashcardBridge</code> 双向接口，原版书阅读器查词收藏后自动同步至「素扉卡片 · 原版书生词本」卡组。
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn sm ghost" onclick="switchTab(0);switchSufeiDeck('english_reader')">前往生词本素扉卡 →</button>
+            <button class="btn sm ghost" onclick="addSampleReaderVocab()">+ 注入测试原版书生词</button>
+            <button class="btn sm ghost" onclick="launchEnglishReaderActivity()">📖 打开原版书阅读器</button>
+          </div>
+        </div>
+
+        <!-- 我的收藏列表 -->
+        <div style="font-weight:700;font-size:15px;margin:16px 0 8px">⭐ 我的收藏题目</div>
+        <div id="fav-list"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ==================== 2. 素扉卡片 Container Transform 原位沉浸膨胀详情层 ==================== -->
+<div class="sufei-morph-scrim" id="sufei-morph-scrim" onclick="closeSufeiImmersiveDetail()"></div>
+<div class="sufei-morph-container" id="sufei-morph-container">
+  <div class="top-appbar" style="background:var(--surface)">
+    <button class="m3-chip-btn" onclick="closeSufeiImmersiveDetail()">
+      <svg class="m3-icon" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+      <span>收起卡片</span>
+    </button>
+    <h1 class="poetry-serif" id="sufei-detail-header-title">词条详情</h1>
+    <button class="m3-chip-btn primary" onclick="triggerRagFromSufeiDetail()">🤖 RAG原文溯源</button>
+  </div>
+  <div class="sufei-morph-scroll" id="sufei-morph-scroll">
+    <div style="margin-bottom:16px">
+      <span class="sufei-seal-badge" id="sufei-detail-badge">科目</span>
+      <div class="poetry-serif" id="sufei-detail-stem" style="font-size:30px;font-weight:700;margin:14px 0 8px;line-height:1.3"></div>
+      <div id="sufei-detail-phonetic" style="font-family:monospace;color:var(--primary);margin-bottom:10px;display:none"></div>
+    </div>
+    <div id="sufei-detail-body"></div>
+  </div>
+</div>
+
+<!-- ==================== 3. 次级全屏页面 (章节题目、真题卷面、全真模考、挖空背诵) ==================== -->
+<div class="sub-page" id="sub-page-chapter">
+  <div class="top-appbar">
+    <button class="m3-chip-btn" onclick="closeSubPage('sub-page-chapter')">← 返回</button>
+    <h1 id="chapter-title">章节题目</h1>
+  </div>
+  <div class="sub-page-scroll">
+    <div class="container" id="chapter-body"></div>
+  </div>
+</div>
+
+<div class="sub-page" id="sub-page-ztpaper">
+  <div class="top-appbar">
+    <button class="m3-chip-btn" onclick="closeSubPage('sub-page-ztpaper')">← 返回</button>
+    <h1 id="ztpaper-title">真题卷面</h1>
+  </div>
+  <div class="sub-page-scroll">
+    <div class="container" id="ztpaper-body"></div>
+  </div>
+</div>
+
+<div class="sub-page" id="sub-page-exam">
+  <div class="top-appbar">
+    <button class="m3-chip-btn" onclick="closeSubPage('sub-page-exam')">← 退出模考</button>
+    <h1 id="exam-title">全真模考</h1>
+  </div>
+  <div class="sub-page-scroll">
+    <div class="container" id="exam-body"></div>
+  </div>
+</div>
+
+<div class="sub-page" id="sub-page-blank">
+  <div class="top-appbar">
+    <button class="m3-chip-btn" onclick="closeSubPage('sub-page-blank')">← 退出背诵</button>
+    <h1 id="blank-title">挖空背诵训练</h1>
+  </div>
+  <div class="sub-page-scroll">
+    <div class="container" id="blank-body"></div>
+  </div>
+</div>
+
+<!-- ==================== 4. Mac 悬浮小窗容器与左右侧边 Dock ==================== -->
+<div id="floating-windows-layer"></div>
+<div id="dock-left" class="side-dock left"></div>
+<div id="dock-right" class="side-dock right"></div>
+
+<!-- ==================== 5. 底部 Material 3 NavigationBar ==================== -->
+<div class="tabbar">
+  <button class="tabbar-item on" onclick="switchTab(0)">
+    <div class="tabbar-pill"><svg class="m3-icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg></div>
+    <span>素扉词卡</span>
+  </button>
+  <button class="tabbar-item" onclick="switchTab(1)">
+    <div class="tabbar-pill"><svg class="m3-icon" viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/></svg></div>
+    <span>教材篇章</span>
+  </button>
+  <button class="tabbar-item" onclick="switchTab(2)">
+    <div class="tabbar-pill"><svg class="m3-icon" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg></div>
+    <span>历年真题</span>
+  </button>
+  <button class="tabbar-item" onclick="switchTab(3)">
+    <div class="tabbar-pill"><svg class="m3-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg></div>
+    <span>RAG·导图</span>
+  </button>
+  <button class="tabbar-item" onclick="switchTab(4)">
+    <div class="tabbar-pill"><svg class="m3-icon" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg></div>
+    <span>题库·收藏</span>
+  </button>
+</div>
+
+<!-- ==================== 6. 模态弹窗：词条检索、主题配色、导入题库 ==================== -->
+<div class="modal-mask" id="modal-search" onclick="if(event.target===this)closeSearchModal()">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span>🔍 专有名词超链接索引库</span>
+      <button class="btn sm ghost" onclick="closeSearchModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input class="input" id="term-search-input" placeholder="输入关键词过滤专有名词（点击词条即开悬浮小窗）…" oninput="filterTermIndex(this.value)" style="margin-bottom:12px">
+      <div id="term-index-chips" style="display:flex;flex-wrap:wrap;gap:6px;max-height:55vh;overflow-y:auto"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask" id="modal-theme" onclick="if(event.target===this)closeThemeModal()">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span>🎨 Material 3 主题与护眼模式</span>
+      <button class="btn sm ghost" onclick="closeThemeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-weight:700;margin-bottom:8px">中国传统色主题</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+        <button class="btn ghost" onclick="setAppTheme('vermilion')">📕 朱砂印 (默认)</button>
+        <button class="btn ghost" onclick="setAppTheme('jade')">📗 碧玉青</button>
+        <button class="btn ghost" onclick="setAppTheme('indigo')">📘 靛青蓝</button>
+        <button class="btn ghost" onclick="setAppTheme('amber')">📙 琥珀金</button>
+      </div>
+      <div style="font-weight:700;margin-bottom:8px">明暗与护眼背景</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <button class="btn ghost" onclick="setAppDark('light')">☀️ 宣纸浅色</button>
+        <button class="btn ghost" onclick="setAppDark('dark')">🌙 松烟暗色</button>
+        <button class="btn ghost" onclick="setAppDark('amoled')">🖤 纯黑护眼</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask" id="modal-import" onclick="if(event.target===this)closeImportBankModal()">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span>📥 导入自定义题库 JSON</span>
+      <button class="btn sm ghost" onclick="closeImportBankModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--sub);margin-bottom:8px">
+        支持粘贴题目数组 JSON（格式：<code>[{"id":"C01","book_name":"现代汉语","chapter":"第一章","type":"名词解释","stem":"音素","answer":"..."}]</code>）
+      </div>
+      <textarea id="import-json-textarea" class="input" rows="7" placeholder='[{"book_name":"自定义题库","chapter":"第一章","type":"名词解释","stem":"语流音变","answer":"在连续语流中，由于相邻音节的相互影响而产生的语音变化。"}]'></textarea>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+        <button class="btn ghost" onclick="closeImportBankModal()">取消</button>
+        <button class="btn" onclick="confirmImportBank()">确认并入题库</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="app-toast" class="app-toast"></div>
+
+<!-- 加载可删除沙箱镜像数据包 -->
+<script src="./data_bundle.js"></script>
+<script>
+/* ============================================================================
+ * 条畅 TalkTree × 汉硕研读与素扉词卡工作台 核心引擎
+ * - 方案 A：TalkTree 原生端侧 RAG + 本地 llama.cpp 大模型深度融合
+ * - 素扉卡片：真实 Container Transform 原位共享元素膨胀动效 + 零触控死锁状态机
+ * - 动态题库沙箱：支持一键物理删除内置题库、按书/按章删除、恢复内置题库、自定义导入
+ * - FlashcardBridge：预留英语原版书阅读器单词本完整双向接口
+ * ============================================================================ */
+
+window.DB = { meta: {}, questions: [] };
+window.TERMS = { terms: {}, alias: {}, count: 0 };
+window.ZT = { papers: [] };
+window.openWindows = [];
+window.minimizedDocks = [];
+let topZIndex = 710;
+let currentTabIndex = 0;
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function showToast(msg) {
+  const el = document.getElementById('app-toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+/* ==================== 1. 英语阅读器单词本接口 (FlashcardBridge) ==================== */
+const DEFAULT_READER_VOCAB = [
+  {
+    id: 'VOCAB-001',
+    source: 'english_reader',
+    stem: 'serendipity',
+    phonetic: '/ˌser.ənˈdɪp.ə.ti/',
+    book_name: 'Alice in Wonderland · 原版书生词本',
+    chapter: 'Chapter 1 · Down the Rabbit-Hole',
+    type: '原版书生词',
+    level: 3,
+    score: 5,
+    answer: 'n. 意外发现珍奇事物的本领；机缘凑巧。',
+    layers: {
+      core: '【核心词义】n. 机缘凑巧；意外发现珍宝的运道（Cet6 / GRE 高频核心词）。',
+      textbook: '【词根词源】源自波斯童话《锡兰三王子》（The Three Princes of Serendip），主人公总能在旅途中意外发现未曾刻意寻找的珍奇事物。',
+      examples: '【原版书原句】Alice tumbled down the rabbit-hole in pure serendipity, discovering a world of logic and absurdity.',
+      academic: [{ text: '搭配：pure serendipity（纯属巧合）/ serendipitous discovery（意外科学发现）', source: 'FlashcardBridge · 原版书阅读器同步' }]
+    }
+  },
+  {
+    id: 'VOCAB-002',
+    source: 'english_reader',
+    stem: 'ephemeral',
+    phonetic: '/ɪˈfem.ər.əl/',
+    book_name: 'Alice in Wonderland · 原版书生词本',
+    chapter: 'Chapter 2 · The Pool of Tears',
+    type: '原版书生词',
+    level: 3,
+    score: 5,
+    answer: 'adj. 短暂的；朝生暮死的；转瞬即逝的。',
+    layers: {
+      core: '【核心词义】adj. 转瞬即逝的，短暂的（同义词：transient, fleeting, short-lived）。',
+      textbook: '【词根解析】epi- (在…上) + hemera (一天) → 只存在一天的 → 朝生暮死的。',
+      examples: '【原版书例句】The Cheshire Cat’s grin lingered above the branches, an ephemeral phantom in the woods.',
+      academic: [{ text: '学术写作常用于描述：ephemeral memory / ephemeral phenomena', source: 'FlashcardBridge · 原版书阅读器同步' }]
+    }
+  }
+];
+
+window.FlashcardBridge = {
+  getReaderVocabList: function() {
+    try {
+      if (window.HanshuoNative && typeof window.HanshuoNative.getReaderVocabJson === 'function') {
+        const raw = window.HanshuoNative.getReaderVocabJson();
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length) return parsed;
+        }
+      }
+      const localRaw = localStorage.getItem('talktree_reader_vocab_cards');
+      if (localRaw) {
+        const parsed = JSON.parse(localRaw);
+        if (Array.isArray(parsed) && parsed.length) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_READER_VOCAB.slice();
+  },
+  pushVocabCard: function(cardObj) {
+    const list = this.getReaderVocabList();
+    const item = {
+      id: cardObj.id || ('VOCAB-' + Date.now()),
+      source: 'english_reader',
+      stem: cardObj.headword || cardObj.stem || 'word',
+      phonetic: cardObj.phonetic || '',
+      book_name: cardObj.bookTitle || cardObj.book_name || '英语原版书生词本',
+      chapter: cardObj.chapter || '精选生词',
+      type: '原版书生词',
+      level: 3,
+      score: 5,
+      answer: cardObj.definition || cardObj.answer || '',
+      layers: {
+        core: '【核心词义】' + (cardObj.definition || cardObj.answer || ''),
+        textbook: '【语境解析】' + (cardObj.notes || '来自英语原版书阅读器划词收藏'),
+        examples: '【原版书原句】' + (cardObj.example || cardObj.contextSentence || ''),
+        academic: [{ text: '艾宾浩斯复习间隔：待巩固', source: 'FlashcardBridge' }]
+      }
+    };
+    list.unshift(item);
+    try {
+      localStorage.setItem('talktree_reader_vocab_cards', JSON.stringify(list));
+      if (window.HanshuoNative && typeof window.HanshuoNative.saveReaderVocabJson === 'function') {
+        window.HanshuoNative.saveReaderVocabJson(JSON.stringify(list));
+      }
+    } catch (e) {}
+    updateSandboxStatsUI();
+    return item;
+  }
+};
+
+window.addSampleReaderVocab = function() {
+  const samples = [
+    { headword: 'ubiquitous', phonetic: '/juːˈbɪk.wɪ.təs/', definition: 'adj. 无所不在的；十分普遍的。', example: 'Metaphors are ubiquitous in everyday natural language.', bookTitle: 'Linguistics & English Reader' },
+    { headword: 'eloquent', phonetic: '/ˈel.ə.kwənt/', definition: 'adj. 雄辩的；有口才的；富于表现力的。', example: 'Her eloquent defense of classical philology moved the entire committee.', bookTitle: 'Classic Essays Reader' },
+    { headword: 'paradigm', phonetic: '/ˈpær.ə.daɪm/', definition: 'n. 范式；词形变化表；典范。', example: 'Chomsky introduced a new paradigm in generative grammar.', bookTitle: 'Syntactic Structures' }
+  ];
+  const pick = samples[Math.floor(Math.random() * samples.length)];
+  window.FlashcardBridge.pushVocabCard(pick);
+  if (currentSufeiDeck === 'english_reader') {
+    initHeroSufeiCards();
+  }
+  showToast('已通过 FlashcardBridge 同步生词：' + pick.headword);
+};
+
+window.launchEnglishReaderActivity = function() {
+  if (window.HanshuoNative && typeof window.HanshuoNative.openEnglishReader === 'function') {
+    window.HanshuoNative.openEnglishReader();
+  } else {
+    showToast('正在通过 Intent 唤起原版书阅读器…');
+  }
+};
+
+/* ==================== 2. 动态题库沙箱管理（内置题库可删除/恢复/导入导出） ==================== */
+function isBuiltinDeleted() {
+  try {
+    if (window.HanshuoNative && typeof window.HanshuoNative.isBuiltinBankDeleted === 'function') {
+      if (window.HanshuoNative.isBuiltinBankDeleted()) return true;
+    }
+    return localStorage.getItem('hanshuo_builtin_deleted') === '1';
+  } catch (e) { return false; }
+}
+
+function getDeletedKeysMap() {
+  try {
+    return JSON.parse(localStorage.getItem('hanshuo_deleted_keys') || '{"books":{},"chapters":{},"qids":{}}');
+  } catch (e) {
+    return { books: {}, chapters: {}, qids: {} };
+  }
+}
+
+function saveDeletedKeysMap(m) {
+  try { localStorage.setItem('hanshuo_deleted_keys', JSON.stringify(m)); } catch (e) {}
+}
+
+function getCustomQuestions() {
+  try {
+    if (window.HanshuoNative && typeof window.HanshuoNative.getCustomQuestionsJson === 'function') {
+      const r = window.HanshuoNative.getCustomQuestionsJson();
+      if (r) {
+        const arr = JSON.parse(r);
+        if (Array.isArray(arr)) return arr;
+      }
+    }
+    return JSON.parse(localStorage.getItem('hanshuo_custom_questions') || '[]');
+  } catch (e) { return []; }
+}
+
+function saveCustomQuestions(arr) {
+  try {
+    const s = JSON.stringify(arr);
+    localStorage.setItem('hanshuo_custom_questions', s);
+    if (window.HanshuoNative && typeof window.HanshuoNative.saveCustomQuestionsJson === 'function') {
+      window.HanshuoNative.saveCustomQuestionsJson(s);
+    }
+  } catch (e) {}
+}
+
+function rebuildActiveDatabase() {
+  const deleted = isBuiltinDeleted();
+  const delMap = getDeletedKeysMap();
+  const customQs = getCustomQuestions();
+
+  let baseQuestions = [];
+  if (!deleted && window.__BUILTIN_QUESTIONS_DATA && Array.isArray(window.__BUILTIN_QUESTIONS_DATA.questions)) {
+    baseQuestions = window.__BUILTIN_QUESTIONS_DATA.questions.filter(q => {
+      if (delMap.qids && delMap.qids[q.id]) return false;
+      if (delMap.books && delMap.books[q.book_name]) return false;
+      if (delMap.chapters && delMap.chapters[q.book_name + '||' + q.chapter]) return false;
+      return true;
+    });
+  }
+
+  window.DB = {
+    meta: { total: baseQuestions.length + customQs.length },
+    questions: customQs.concat(baseQuestions)
+  };
+
+  if (!deleted && window.__BUILTIN_TERM_INDEX) {
+    window.TERMS = JSON.parse(JSON.stringify(window.__BUILTIN_TERM_INDEX));
+  } else {
+    window.TERMS = { terms: {}, alias: {}, count: 0 };
+  }
+  // 将自定义名词解释也注册进超链接词条库
+  customQs.forEach(q => {
+    if (q.stem && q.id) window.TERMS.terms[q.stem] = q.id;
+  });
+
+  if (!deleted && window.__BUILTIN_ZHENTI_DATA) {
+    window.ZT = window.__BUILTIN_ZHENTI_DATA;
+  } else {
+    window.ZT = { papers: [] };
+  }
+
+  _linkRe = null;
+  buildLinkRe();
+  const badgeEl = document.getElementById('term-count-badge');
+  if (badgeEl) badgeEl.textContent = Object.keys(window.TERMS.terms || {}).length + ' 词';
+
+  initHeroSufeiCards();
+  populateBookChapterSelectors();
+  updateSandboxStatsUI();
+  if (currentTabIndex === 1) renderBooks();
+  if (currentTabIndex === 2) renderZhenti();
+  if (currentTabIndex === 4) renderFav();
+}
+
+window.deleteBuiltinQuestionBank = function() {
+  try {
+    localStorage.setItem('hanshuo_builtin_deleted', '1');
+    if (window.HanshuoNative && typeof window.HanshuoNative.deleteBuiltinBank === 'function') {
+      window.HanshuoNative.deleteBuiltinBank();
+    }
+  } catch (e) {}
+  rebuildActiveDatabase();
+  showToast('🗑️ 已彻底删除清空内置题库！仅保留自定义与AI生成题目');
+};
+
+window.restoreBuiltinQuestionBank = function() {
+  try {
+    localStorage.removeItem('hanshuo_builtin_deleted');
+    localStorage.removeItem('hanshuo_deleted_keys');
+    if (window.HanshuoNative && typeof window.HanshuoNative.restoreBuiltinBank === 'function') {
+      window.HanshuoNative.restoreBuiltinBank();
+    }
+  } catch (e) {}
+  rebuildActiveDatabase();
+  showToast('🔄 已恢复官方内置 2,430 道汉硕题库與真题卷！');
+};
+
+window.deleteBookBank = function(bookName, ev) {
+  if (ev) ev.stopPropagation();
+  const m = getDeletedKeysMap();
+  m.books[bookName] = true;
+  saveDeletedKeysMap(m);
+  const custom = getCustomQuestions().filter(q => q.book_name !== bookName);
+  saveCustomQuestions(custom);
+  rebuildActiveDatabase();
+  showToast('已删除教材题库：《' + bookName + '》');
+};
+
+window.deleteChapterBank = function(bookName, chapter, ev) {
+  if (ev) ev.stopPropagation();
+  const m = getDeletedKeysMap();
+  m.chapters[bookName + '||' + chapter] = true;
+  saveDeletedKeysMap(m);
+  const custom = getCustomQuestions().filter(q => !(q.book_name === bookName && q.chapter === chapter));
+  saveCustomQuestions(custom);
+  rebuildActiveDatabase();
+  showToast('已删除章节：' + chapter);
+};
+
+window.deleteSingleQuestion = function(qid, ev) {
+  if (ev) ev.stopPropagation();
+  const m = getDeletedKeysMap();
+  m.qids[qid] = true;
+  saveDeletedKeysMap(m);
+  const custom = getCustomQuestions().filter(q => q.id !== qid);
+  saveCustomQuestions(custom);
+  rebuildActiveDatabase();
+  const cardEl = document.querySelector(`[data-qid="${qid}"]`);
+  if (cardEl) cardEl.remove();
+  showToast('已从题库删除该题');
+};
+
+function updateSandboxStatsUI() {
+  const deleted = isBuiltinDeleted();
+  const customCount = getCustomQuestions().length;
+  const totalCount = (window.DB.questions || []).length;
+  const vocabCount = window.FlashcardBridge.getReaderVocabList().length;
+
+  const badge = document.getElementById('sandbox-status-badge');
+  const desc = document.getElementById('sandbox-stats-desc');
+  const vBadge = document.getElementById('vocab-bridge-count');
+  if (vBadge) vBadge.textContent = vocabCount + ' 词';
+  if (badge) {
+    badge.textContent = deleted ? '内置题库：已物理清空' : ('内置题库：正常挂载 (' + totalCount + '题)');
+  }
+  if (desc) {
+    desc.innerHTML = `当前有效总题量：<b>${totalCount}</b> 题（其中自定义/AI生成题目：<b>${customCount}</b> 题） · 专有名词超链接索引：<b>${Object.keys(window.TERMS.terms || {}).length}</b> 条 · 历年真题卷：<b>${(window.ZT.papers || []).length}</b> 套。`;
+  }
+}
+
+window.openImportBankModal = function() {
+  document.getElementById('modal-import').classList.add('active');
+};
+window.closeImportBankModal = function() {
+  document.getElementById('modal-import').classList.remove('active');
+};
+window.confirmImportBank = function() {
+  const raw = document.getElementById('import-json-textarea').value.trim();
+  if (!raw) { showToast('请先粘贴 JSON 内容'); return; }
+  try {
+    const parsed = JSON.parse(raw);
+    const arr = Array.isArray(parsed) ? parsed : (parsed.questions || []);
+    if (!arr.length) { showToast('未识别到有效题目数组'); return; }
+    const existing = getCustomQuestions();
+    arr.forEach((item, idx) => {
+      existing.unshift({
+        id: item.id || ('CUST-' + Date.now() + '-' + idx),
+        book_id: item.book_id || 'custom',
+        book_name: item.book_name || '自定义导入题库',
+        chapter: item.chapter || '默认章节',
+        type: item.type || '名词解释',
+        level: item.level || 2,
+        score: item.score || 5,
+        stem: item.stem || '未命名题目',
+        answer: item.answer || '',
+        options: item.options || null,
+        layers: item.layers || null
+      });
+    });
+    saveCustomQuestions(existing);
+    closeImportBankModal();
+    rebuildActiveDatabase();
+    showToast('成功导入 ' + arr.length + ' 道题目！');
+  } catch (e) {
+    showToast('JSON 格式解析失败：' + e.message);
+  }
+};
+
+window.exportCurrentBank = function() {
+  const dataStr = JSON.stringify({ meta: window.DB.meta, questions: window.DB.questions.slice(0, 200) }, null, 2);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(dataStr).then(() => showToast('已复制题库 JSON 至剪贴板！'));
+  } else {
+    showToast('题库共 ' + window.DB.questions.length + ' 题，已准备就绪');
+  }
+};
+
+/* ==================== 3. 素扉卡片引擎 & Container Transform 原位沉浸膨胀动效 ==================== */
+let currentSufeiDeck = 'hanshuo'; // 'hanshuo' | 'english_reader'
+let heroTermsList = [];
+let heroCurrentIdx = 0;
+// 严格手势状态机：彻底隔离卡片横滑与详情页滚动，杜绝任何触控坏死
+window.__SUFEI_STATE = 'IDLE'; // 'IDLE' | 'SWIPING' | 'MORPHING' | 'OPEN'
+
+window.switchSufeiDeck = function(deckName) {
+  currentSufeiDeck = deckName;
+  document.getElementById('deck-btn-hanshuo').classList.toggle('active', deckName === 'hanshuo');
+  document.getElementById('deck-btn-vocab').classList.toggle('active', deckName === 'english_reader');
+  heroCurrentIdx = 0;
+  initHeroSufeiCards();
+};
+
+function initHeroSufeiCards() {
+  if (currentSufeiDeck === 'english_reader') {
+    heroTermsList = window.FlashcardBridge.getReaderVocabList();
+  } else {
+    const allQ = (window.DB && window.DB.questions) ? window.DB.questions : [];
+    heroTermsList = allQ.filter(q => q.type === '名词解释' || (q.layers && q.layers.core));
+  }
+  if (heroCurrentIdx >= heroTermsList.length) heroCurrentIdx = 0;
+  renderHeroCard();
+}
+
+function getCardPlainDigest(q) {
+  if (!q) return '';
+  if (q.layers && q.layers.core) {
+    return Array.isArray(q.layers.core) ? q.layers.core.join('') : String(q.layers.core);
+  }
+  return q.answer || '';
+}
+
+function renderHeroCard() {
+  const stemEl = document.getElementById('hero-card-stem');
+  const badgeEl = document.getElementById('hero-card-badge');
+  const metaEl = document.getElementById('hero-card-meta');
+  const digestEl = document.getElementById('hero-card-digest');
+  const phoEl = document.getElementById('hero-card-phonetic');
+  const progEl = document.getElementById('hero-progress-txt');
+
+  if (!heroTermsList || !heroTermsList.length) {
+    stemEl.textContent = currentSufeiDeck === 'english_reader' ? '生词本暂无词卡' : '题库已清空';
+    badgeEl.textContent = currentSufeiDeck === 'english_reader' ? 'English Reader' : '沙箱空置';
+    metaEl.textContent = '';
+    phoEl.style.display = 'none';
+    digestEl.innerHTML = '可在「题库·收藏」页点击「恢复官方内置题库」或前往「RAG·导图」使用本地大模型出题。';
+    if (progEl) progEl.textContent = '0 / 0';
+    return;
+  }
+
+  const q = heroTermsList[heroCurrentIdx] || heroTermsList[0];
+  badgeEl.textContent = q.book_name || '汉硕核心考点';
+  const stars = '★'.repeat(Math.min(5, Math.max(1, q.level || 3)));
+  metaEl.textContent = `${stars} · ${q.score || 5}分`;
+  stemEl.textContent = q.stem;
+
+  if (q.phonetic) {
+    phoEl.textContent = q.phonetic;
+    phoEl.style.display = 'block';
+  } else {
+    phoEl.style.display = 'none';
+  }
+
+  digestEl.innerHTML = window.linkify(getCardPlainDigest(q));
+  if (progEl) progEl.textContent = `${heroCurrentIdx + 1} / ${heroTermsList.length}`;
+}
+
+window.nextHeroCard = function() {
+  if (!heroTermsList.length || window.__SUFEI_STATE !== 'IDLE') return;
+  const card = document.getElementById('active-hero-card');
+  card.style.transform = 'translate3d(-36px, 0, 0) scale(0.97)';
+  card.style.opacity = '0.4';
+  setTimeout(() => {
+    heroCurrentIdx = (heroCurrentIdx + 1) % heroTermsList.length;
+    renderHeroCard();
+    card.style.transition = 'none';
+    card.style.transform = 'translate3d(36px, 0, 0) scale(0.97)';
+    void card.offsetWidth;
+    card.style.transition = '';
+    card.style.transform = 'translate3d(0, 0, 0) scale(1)';
+    card.style.opacity = '1';
+  }, 140);
+};
+
+window.prevHeroCard = function() {
+  if (!heroTermsList.length || window.__SUFEI_STATE !== 'IDLE') return;
+  const card = document.getElementById('active-hero-card');
+  card.style.transform = 'translate3d(36px, 0, 0) scale(0.97)';
+  card.style.opacity = '0.4';
+  setTimeout(() => {
+    heroCurrentIdx = (heroCurrentIdx - 1 + heroTermsList.length) % heroTermsList.length;
+    renderHeroCard();
+    card.style.transition = 'none';
+    card.style.transform = 'translate3d(-36px, 0, 0) scale(0.97)';
+    void card.offsetWidth;
+    card.style.transition = '';
+    card.style.transform = 'translate3d(0, 0, 0) scale(1)';
+    card.style.opacity = '1';
+  }, 140);
+};
+
+window.randomHeroCard = function() {
+  if (!heroTermsList.length || window.__SUFEI_STATE !== 'IDLE') return;
+  heroCurrentIdx = Math.floor(Math.random() * heroTermsList.length);
+  renderHeroCard();
+  showToast('🎲 已随机切换词卡：' + heroTermsList[heroCurrentIdx].stem);
+};
+
+window.onHeroCardTap = function(e) {
+  if (window.__SUFEI_STATE !== 'IDLE') return;
+  if (e && e.target && e.target.closest && e.target.closest('.term-link')) return;
+  openSufeiImmersiveDetail();
+};
+
+/* 核心：素扉卡片原位共享元素膨胀动效 (Container Transform) */
+window.openSufeiImmersiveDetail = function() {
+  if (!heroTermsList.length) return;
+  if (window.__SUFEI_STATE !== 'IDLE') return;
+
+  const q = heroTermsList[heroCurrentIdx];
+  if (!q) return;
+
+  window.__SUFEI_STATE = 'MORPHING';
+  const card = document.getElementById('active-hero-card');
+  const morph = document.getElementById('sufei-morph-container');
+  const scrim = document.getElementById('sufei-morph-scrim');
+  const scrollBox = document.getElementById('sufei-morph-scroll');
+
+  // 填充详情内容
+  document.getElementById('sufei-detail-header-title').textContent = q.stem;
+  document.getElementById('sufei-detail-stem').textContent = q.stem;
+  document.getElementById('sufei-detail-badge').textContent = (q.book_name || '核心考点') + (q.chapter ? ' · ' + q.chapter : '');
+  const dPho = document.getElementById('sufei-detail-phonetic');
+  if (q.phonetic) {
+    dPho.textContent = q.phonetic;
+    dPho.style.display = 'block';
+  } else {
+    dPho.style.display = 'none';
+  }
+  document.getElementById('sufei-detail-body').innerHTML = renderAnswerHtml(q, true);
+  if (scrollBox) scrollBox.scrollTop = 0;
+
+  // Step 1: 测量原卡片在视口中的精确物理坐标
+  const rect = card ? card.getBoundingClientRect() : { top: 110, left: 20, width: window.innerWidth - 40, height: 420 };
+  morph.style.setProperty('--m-top', rect.top + 'px');
+  morph.style.setProperty('--m-left', rect.left + 'px');
+  morph.style.setProperty('--m-w', rect.width + 'px');
+  morph.style.setProperty('--m-h', rect.height + 'px');
+  morph.style.setProperty('--m-r', '28px');
+
+  // Step 2: 原位挂载并强制浏览器重排
+  morph.classList.remove('morph-expanded', 'morph-interactive');
+  morph.classList.add('morph-mounted');
+  scrim.classList.add('open');
+  void morph.offsetWidth;
+
+  // Step 3: 触发 Material 3 Container Transform 膨胀至全屏
+  requestAnimationFrame(() => {
+    morph.classList.add('morph-expanded');
+    setTimeout(() => {
+      morph.classList.add('morph-interactive');
+      window.__SUFEI_STATE = 'OPEN';
+    }, 345);
+  });
+};
+
+window.closeSufeiImmersiveDetail = function() {
+  if (window.__SUFEI_STATE !== 'OPEN' && window.__SUFEI_STATE !== 'MORPHING') return;
+  window.__SUFEI_STATE = 'MORPHING';
+
+  const card = document.getElementById('active-hero-card');
+  const morph = document.getElementById('sufei-morph-container');
+  const scrim = document.getElementById('sufei-morph-scrim');
+
+  // 刷新目标原位矩形，确保逆向收缩严丝合缝回到原卡片位置
+  if (card) {
+    const rect = card.getBoundingClientRect();
+    morph.style.setProperty('--m-top', rect.top + 'px');
+    morph.style.setProperty('--m-left', rect.left + 'px');
+    morph.style.setProperty('--m-w', rect.width + 'px');
+    morph.style.setProperty('--m-h', rect.height + 'px');
+    morph.style.setProperty('--m-r', '28px');
+  }
+
+  morph.classList.remove('morph-interactive');
+  morph.classList.remove('morph-expanded');
+  scrim.classList.remove('open');
+
+  setTimeout(() => {
+    morph.classList.remove('morph-mounted');
+    window.__SUFEI_STATE = 'IDLE';
+  }, 335);
+};
+
+window.triggerRagFromSufeiDetail = function() {
+  const q = heroTermsList[heroCurrentIdx];
+  if (!q) return;
+  closeSufeiImmersiveDetail();
+  setTimeout(() => {
+    switchTab(3);
+    switchRagSubTab(0);
+    document.getElementById('rag-term-input').value = q.stem;
+    runRagTermExplain();
+  }, 360);
+};
+
+function bindHeroCardSwipeIsolated() {
+  const card = document.getElementById('active-hero-card');
+  if (!card || card.__swipeBound) return;
+  card.__swipeBound = true;
+
+  let sx = 0, sy = 0, dx = 0, lockedAxis = null;
+
+  card.addEventListener('touchstart', function(e) {
+    if (window.__SUFEI_STATE !== 'IDLE' || !e.touches || e.touches.length !== 1) return;
+    sx = e.touches[0].clientX;
+    sy = e.touches[0].clientY;
+    dx = 0;
+    lockedAxis = null;
+  }, { passive: true });
+
+  card.addEventListener('touchmove', function(e) {
+    if (window.__SUFEI_STATE !== 'IDLE' && window.__SUFEI_STATE !== 'SWIPING') return;
+    if (!e.touches || e.touches.length !== 1) return;
+    const curX = e.touches[0].clientX - sx;
+    const curY = e.touches[0].clientY - sy;
+
+    if (!lockedAxis) {
+      if (Math.abs(curX) < 10 && Math.abs(curY) < 10) return;
+      lockedAxis = Math.abs(curX) > Math.abs(curY) * 1.25 ? 'x' : 'y';
+    }
+    if (lockedAxis !== 'x') return;
+
+    window.__SUFEI_STATE = 'SWIPING';
+    card.classList.add('swiping');
+    dx = curX;
+    const rot = Math.max(-8, Math.min(8, dx * 0.035));
+    card.style.transform = `translate3d(${dx}px, 0, 0) rotate(${rot}deg)`;
+  }, { passive: true });
+
+  function finishSwipe() {
+    if (window.__SUFEI_STATE !== 'SWIPING') return;
+    card.classList.remove('swiping');
+    const finalDx = dx;
+    dx = 0;
+    lockedAxis = null;
+    window.__SUFEI_STATE = 'IDLE';
+
+    if (finalDx > 72) {
+      prevHeroCard();
+    } else if (finalDx < -72) {
+      nextHeroCard();
+    } else {
+      card.style.transform = 'translate3d(0, 0, 0) rotate(0deg)';
+    }
+  }
+
+  card.addEventListener('touchend', finishSwipe, { passive: true });
+  card.addEventListener('touchcancel', finishSwipe, { passive: true });
+}
+
+/* ==================== 4. 同文本双向超链接扫描与四层古典释义渲染 (含 AI 动态实体双链) ==================== */
+let _linkRe = null;
+let _tetherCounter = 0;
+let _activeTetherEl = null;
+
+function buildLinkRe() {
+  const terms = Object.keys((window.TERMS && window.TERMS.terms) || {});
+  if (!terms.length) { _linkRe = null; return; }
+  terms.sort((a, b) => b.length - a.length);
+  const alts = terms
+    .filter(t => t && t.length >= 2)
+    .slice(0, 1200)
+    .map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  _linkRe = alts.length ? new RegExp('(' + alts.join('|') + ')', 'g') : null;
+}
+
+window.linkify = function(text, sourceContext) {
+  if (!text) return '';
+  sourceContext = sourceContext || {};
+  let str = String(text);
+
+  // 阶段一：识别大模型动态实体标记 [[概念名]] 并使用安全占位符寄存，杜绝嵌套替换
+  const entityPlaceholders = [];
+  const entityRe = /\[\[(.*?)\]\]/g;
+  str = str.replace(entityRe, (m, rawTerm) => {
+    const cleanTerm = rawTerm.trim();
+    if (!cleanTerm) return '';
+    _tetherCounter++;
+    const tetherId = 'tether-' + _tetherCounter;
+    const isLocal = window.TERMS && window.TERMS.terms && window.TERMS.terms[cleanTerm];
+    const nextCrumbs = (sourceContext.breadcrumbs || []).concat([cleanTerm]);
+    const ctxPayload = encodeURIComponent(JSON.stringify({
+      tetherId,
+      parentWinId: sourceContext.winId || null,
+      parentTitle: sourceContext.title || null,
+      originQuote: cleanTerm,
+      breadcrumbs: nextCrumbs
+    }));
+
+    let spanHtml = '';
+    if (isLocal) {
+      spanHtml = `<span class="term-link term-local" data-tether-id="${tetherId}" onclick="event.stopPropagation();openTermPopup('${cleanTerm.replace(/'/g, "\\'")}', decodeURIComponent('${ctxPayload}'))" title="本地权威词条（实线超链接）">${esc(cleanTerm)}</span>`;
+    } else {
+      spanHtml = `<span class="term-link term-dynamic" data-tether-id="${tetherId}" onclick="event.stopPropagation();openDynamicAiConceptPopup('${cleanTerm.replace(/'/g, "\\'")}', decodeURIComponent('${ctxPayload}'))" title="AI 动态识别学术概念 · 点击展开下钻解析（虚线超链接）">${esc(cleanTerm)}</span>`;
+    }
+
+    const placeholder = `___ENTITY_TOKEN_${entityPlaceholders.length}___`;
+    entityPlaceholders.push({ placeholder, spanHtml });
+    return placeholder;
+  });
+
+  // 阶段二：对普通文本继续执行本地权威词库静态正则匹配
+  if (!_linkRe) buildLinkRe();
+  if (_linkRe) {
+    str = str.replace(_linkRe, (m, w) => {
+      if (window.TERMS && window.TERMS.terms && window.TERMS.terms[w]) {
+        _tetherCounter++;
+        const tetherId = 'tether-' + _tetherCounter;
+        const nextCrumbs = (sourceContext.breadcrumbs || []).concat([w]);
+        const ctxPayload = encodeURIComponent(JSON.stringify({
+          tetherId,
+          parentWinId: sourceContext.winId || null,
+          parentTitle: sourceContext.title || null,
+          originQuote: w,
+          breadcrumbs: nextCrumbs
+        }));
+        return `<span class="term-link term-local" data-tether-id="${tetherId}" onclick="event.stopPropagation();openTermPopup('${w.replace(/'/g, "\\'")}', decodeURIComponent('${ctxPayload}'))" title="本地权威词条（实线超链接）">${w}</span>`;
+      }
+      return w;
+    });
+  }
+
+  // 阶段三：精确还原所有实体占位符
+  for (let i = 0; i < entityPlaceholders.length; i++) {
+    const item = entityPlaceholders[i];
+    str = str.replace(item.placeholder, item.spanHtml);
+  }
+
+  return str;
+};
+
+function renderAnswerHtml(q, showRagBtn, sourceContext) {
+  sourceContext = sourceContext || {};
+  let h = '';
+  if (q.layers) {
+    const L = q.layers;
+    if (L.core) {
+      const coreTxt = Array.isArray(L.core) ? L.core.join('') : L.core;
+      h += `<div class="layer core"><div class="lab"><span>① 核心定义</span><span>★ 必背核定</span></div><div>${window.linkify(coreTxt, sourceContext)}</div></div>`;
+    }
+    if (L.textbook) {
+      const tbTxt = Array.isArray(L.textbook) ? L.textbook.join('<br>') : L.textbook;
+      h += `<div class="layer"><div class="lab"><span>② 教材原文与理论解析</span><span>📖 教材溯源</span></div><div>${window.linkify(tbTxt, sourceContext)}</div></div>`;
+    }
+    if (L.examples) {
+      const exTxt = Array.isArray(L.examples) ? L.examples.join('<br>') : L.examples;
+      h += `<div class="layer examples"><div class="lab"><span>③ 典型语言学语料例证</span><span>💡 语料实证</span></div><div>${window.linkify(exTxt, sourceContext)}</div></div>`;
+    }
+    if (L.academic) {
+      const acadArr = Array.isArray(L.academic) ? L.academic : [L.academic];
+      h += `<div class="layer academic"><div class="lab"><span>④ 学术流派拓展与真题命题点</span><span>🎓 拔高拓展</span></div>`;
+      acadArr.forEach(a => {
+        const txt = typeof a === 'string' ? a : ((a && a.text) || '');
+        const src = typeof a === 'string' ? '' : ((a && a.source) || '');
+        h += `<div>${window.linkify(txt, sourceContext)}</div>`;
+        if (src) h += `<span class="acad-src">出处：${esc(src)}</span>`;
+      });
+      h += `</div>`;
+    }
+  } else {
+    h += `<div class="layer core"><div class="lab"><span>【参考答案】</span></div><div>${window.linkify(q.answer || '', sourceContext)}</div></div>`;
+    if (q.explain) {
+      h += `<div class="layer examples"><div class="lab"><span>【考点解析】</span></div><div>${window.linkify(q.explain, sourceContext)}</div></div>`;
+    }
+  }
+
+  if (q.sub_terms && q.sub_terms.length) {
+    h += `<div style="margin-top:10px;font-size:12.5px;color:var(--sub)"><b>🔗 同文本关联词条超链接：</b>` +
+      q.sub_terms.map(t => `<span class="term-link term-local" onclick="event.stopPropagation();openTermPopup('${t.replace(/'/g, "\\'")}')">${esc(t)}</span>`).join(' · ') +
+      `</div>`;
+  }
+
+  if (showRagBtn) {
+    h += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+      <button class="btn sm ghost" onclick="event.stopPropagation();openTermRagInPopup('${(q.stem || '').replace(/'/g, "\\'")}')">🤖 本地大模型 RAG 精准原文溯源</button>
+      <button class="btn sm ghost" onclick="event.stopPropagation();jumpToChapterMindMap('${(q.book_name || '').replace(/'/g, "\\'")}','${(q.chapter || '').replace(/'/g, "\\'")}')">🗺️ 查看本章可拖动思维导图卡</button>
+    </div>`;
+  }
+  return h;
+}
+
+/* ==================== 5. Mac 悬浮小窗系统 (支持递归穿透、视觉系带、溯源面包屑与结论反哺) ==================== */
+window.openDynamicAiConceptPopup = function(termName, contextJson) {
+  if (!termName) return;
+  termName = String(termName).trim();
+  let ctx = {};
+  try { if (contextJson) ctx = typeof contextJson === 'string' ? JSON.parse(contextJson) : contextJson; } catch(e){}
+
+  const q = {
+    id: 'AI-DYN-' + Date.now(),
+    book_name: 'AI 动态学术实体',
+    chapter: '大模型双链概念识别',
+    type: '名词解释',
+    stem: termName,
+    answer: `【AI 动态概念识别】「${termName}」为大模型在推理过程中识别的跨学科前沿或核心范畴。可点击下方「本地大模型 RAG 溯源」深入推演，并通过右上角「🌿 合并反哺」将提炼结论带回母会话。`
+  };
+  createTermWindow(q, termName, ctx, true);
+};
+
+window.openTermPopup = function(termName, contextJson) {
+  if (!termName) return;
+  termName = String(termName).trim();
+  let ctx = {};
+  try { if (contextJson) ctx = typeof contextJson === 'string' ? JSON.parse(contextJson) : contextJson; } catch(e){}
+
+  const minIdx = window.minimizedDocks.findIndex(t => t.name === termName);
+  if (minIdx >= 0) { restoreDock(minIdx); return; }
+
+  const existing = window.openWindows.find(w => w.name === termName);
+  if (existing && document.getElementById(existing.winId)) {
+    bringWindowToFront(existing.winId);
+    showToast('已置顶词条窗：' + termName);
+    return;
+  }
+
+  const qid = (window.TERMS && window.TERMS.terms) ? window.TERMS.terms[termName] : null;
+  let q = qid ? window.DB.questions.find(x => x.id === qid) : null;
+  if (!q) {
+    q = window.DB.questions.find(x => x.stem === termName || (x.type === '名词解释' && x.stem && x.stem.includes(termName)));
+  }
+  if (!q) {
+    q = {
+      id: 'TERM-DYN-' + Date.now(),
+      book_name: '条畅本地知识库 · 动态词条',
+      chapter: '同文本超链接即时解析',
+      type: '名词解释',
+      stem: termName,
+      answer: `词条「${termName}」可通过下方「本地大模型 RAG 原文溯源」按钮实时检索教材原文段落并生成四层学术释义。`
+    };
+  }
+  createTermWindow(q, termName, ctx, false);
+};
+
+function bringWindowToFront(winId) {
+  const el = document.getElementById(winId);
+  if (!el) return;
+  topZIndex += 1;
+  el.style.zIndex = topZIndex;
+
+  // 视觉系带联动 (Visual Tether / Highlight Link)
+  if (_activeTetherEl) {
+    _activeTetherEl.classList.remove('tether-active');
+    _activeTetherEl = null;
+  }
+  const w = window.openWindows.find(x => x.winId === winId);
+  if (w && w.tetherId) {
+    const srcEl = document.querySelector(`[data-tether-id="${w.tetherId}"]`);
+    if (srcEl) {
+      srcEl.classList.add('tether-active');
+      _activeTetherEl = srcEl;
+    }
+  }
+}
+
+window.jumpToBreadcrumb = function(winId, idx) {
+  const w = window.openWindows.find(x => x.winId === winId);
+  if (!w || !w.breadcrumbs) return;
+  const targetName = w.breadcrumbs[idx];
+  if (!targetName) return;
+
+  if (targetName === w.name) {
+    showToast('当前已在此小窗');
+    return;
+  }
+
+  const targetWin = window.openWindows.find(x => x.name === targetName);
+  if (targetWin && document.getElementById(targetWin.winId)) {
+    bringWindowToFront(targetWin.winId);
+    showToast('已定位至溯源上级：' + targetName);
+    return;
+  }
+  const dockIdx = window.minimizedDocks.findIndex(x => x.name === targetName);
+  if (dockIdx >= 0) {
+    restoreDock(dockIdx);
+    showToast('已从 Dock 唤回溯源上级：' + targetName);
+    return;
+  }
+  openTermPopup(targetName);
+};
+
+window.mergeWindowInsightToParent = function(winId) {
+  const w = window.openWindows.find(x => x.winId === winId);
+  if (!w) return;
+
+  let selText = '';
+  try {
+    const sel = window.getSelection();
+    if (sel && sel.toString().trim()) {
+      selText = sel.toString().trim();
+    }
+  } catch(e) {}
+
+  let defaultInsight = selText;
+  if (!defaultInsight) {
+    const q = w.data;
+    if (q.layers && q.layers.core) {
+      defaultInsight = Array.isArray(q.layers.core) ? q.layers.core.join('') : q.layers.core;
+    } else if (q.answer) {
+      defaultInsight = q.answer;
+    } else {
+      defaultInsight = `【${w.name}】核心学术结论提炼完毕。`;
+    }
+  }
+
+  const userInsight = prompt(`🌿 提炼结论并合并回母节点 (Branch Merging / Cherry-pick)\n当前分支：「${w.name}」\n请输入或确认要反哺回母会话的核心结论：`, defaultInsight);
+  if (!userInsight || !userInsight.trim()) return;
+
+  const cleanInsight = userInsight.trim();
+  const timeStr = new Date().toLocaleTimeString();
+
+  const insightBubbleHtml = `
+    <div class="branch-insight-bubble">
+      <div><span class="insight-tag">🌿 支线洞察成果反哺</span> <b style="font-size:12px;color:#166534">来源分支：「${esc(w.name)}」</b></div>
+      <div class="insight-quote">“${esc(cleanInsight)}”</div>
+      <div class="insight-meta">
+        <span>已合并至母会话思维上下文</span>
+        <span>${timeStr}</span>
+      </div>
+    </div>
+  `;
+
+  let injected = false;
+  if (w.parentWinId) {
+    const parentBody = document.getElementById('body-' + w.parentWinId);
+    if (parentBody) {
+      const container = document.createElement('div');
+      container.innerHTML = insightBubbleHtml;
+      parentBody.appendChild(container);
+      bringWindowToFront(w.parentWinId);
+      injected = true;
+    }
+  }
+
+  if (!injected) {
+    const heroBody = document.getElementById('sufei-card-body');
+    if (heroBody) {
+      const container = document.createElement('div');
+      container.innerHTML = insightBubbleHtml;
+      heroBody.appendChild(container);
+      injected = true;
+    }
+  }
+
+  window.__MERGED_BRANCH_INSIGHTS = window.__MERGED_BRANCH_INSIGHTS || [];
+  window.__MERGED_BRANCH_INSIGHTS.push({
+    branchName: w.name,
+    insight: cleanInsight,
+    timestamp: Date.now()
+  });
+
+  showToast(`✅ 已成功将「${w.name}」的结论提炼并反哺合并回母节点！`);
+};
+
+window.createTermWindow = function(q, termName, ctx, isDynamicAi) {
+  ctx = ctx || {};
+  const winId = 'win-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+  const offset = (window.openWindows.length % 5) * 18;
+  const initW = Math.min(370, window.innerWidth - 28);
+  const initH = 390;
+  const initL = Math.max(12, Math.floor((window.innerWidth - initW) / 2) + offset - 16);
+  const initT = Math.max(64, 96 + offset);
+
+  const breadcrumbs = ctx.breadcrumbs && ctx.breadcrumbs.length ? ctx.breadcrumbs : [termName];
+
+  topZIndex += 1;
+  const div = document.createElement('div');
+  div.id = winId;
+  div.className = 'floating-win';
+  div.style.width = initW + 'px';
+  div.style.height = initH + 'px';
+  div.style.left = initL + 'px';
+  div.style.top = initT + 'px';
+  div.style.zIndex = topZIndex;
+
+  const crumbsHtml = `
+    <div class="win-breadcrumbs" id="crumbs-${winId}">
+      <span style="font-weight:700;color:var(--primary);margin-right:2px">🧭 溯源:</span>
+      ${breadcrumbs.map((crumb, idx) => {
+        const isLast = idx === breadcrumbs.length - 1;
+        return `<span class="win-crumb-item ${isLast ? 'active' : ''}" onclick="jumpToBreadcrumb('${winId}', ${idx})">${esc(crumb)}</span>` +
+          (!isLast ? `<span class="win-crumb-sep">▸</span>` : '');
+      }).join('')}
+    </div>
+  `;
+
+  div.innerHTML = `
+    <div class="mac-titlebar" id="bar-${winId}">
+      <div class="mac-dots">
+        <span class="mac-dot close" onclick="closeWindow('${winId}')" title="关闭"></span>
+        <span class="mac-dot min" onclick="minimizeWindow('${winId}')" title="收纳至侧边Dock"></span>
+        <span class="mac-dot max" onclick="expandWindow('${winId}')" title="全屏/还原"></span>
+      </div>
+      <div class="mac-title" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        ${isDynamicAi ? '✦ ' : ''}${esc(termName)} · ${esc(q.book_name || '词条卡')}
+      </div>
+      <button class="mac-btn-merge" onclick="mergeWindowInsightToParent('${winId}')" title="提炼结论并合并回母节点 (Branch Synthesis)">🌿 合并反哺</button>
+    </div>
+    ${crumbsHtml}
+    <div class="floating-body" id="body-${winId}">
+      <div style="font-family:var(--serif-font);font-size:19px;font-weight:700;margin-bottom:6px">${esc(q.stem)}</div>
+      ${renderAnswerHtml(q, true, { winId, title: termName, breadcrumbs })}
+      <div id="win-rag-slot-${winId}"></div>
+    </div>
+    <div class="win-resize-handle" data-dir="r"></div>
+    <div class="win-resize-handle" data-dir="b"></div>
+    <div class="win-resize-handle" data-dir="rb"></div>
+  `;
+
+  div.addEventListener('mousedown', () => bringWindowToFront(winId));
+  div.addEventListener('touchstart', () => bringWindowToFront(winId), { passive: true });
+
+  document.getElementById('floating-windows-layer').appendChild(div);
+  window.openWindows.push({
+    winId,
+    name: termName,
+    data: q,
+    isFullscreen: false,
+    parentWinId: ctx.parentWinId || null,
+    parentTitle: ctx.parentTitle || null,
+    tetherId: ctx.tetherId || null,
+    breadcrumbs: breadcrumbs
+  });
+
+  enableWindowDrag(winId);
+  enableWindowResize(winId);
+  bringWindowToFront(winId);
+};
+
+window.closeWindow = function(winId) {
+  const el = document.getElementById(winId);
+  if (el) el.remove();
+  const idx = window.openWindows.findIndex(w => w.winId === winId);
+  if (idx >= 0) {
+    const w = window.openWindows[idx];
+    if (w && w.tetherId && _activeTetherEl) {
+      _activeTetherEl.classList.remove('tether-active');
+      _activeTetherEl = null;
+    }
+    window.openWindows.splice(idx, 1);
+  }
+};
+
+window.minimizeWindow = function(winId) {
+  const w = window.openWindows.find(x => x.winId === winId);
+  if (!w) return;
+  closeWindow(winId);
+  if (!window.minimizedDocks.some(t => t.name === w.name)) {
+    window.minimizedDocks.push({ id: w.data.id, name: w.name, data: w.data });
+  }
+  renderDocks();
+  showToast('已收纳至侧边 Dock：' + w.name);
+};
+
+window.expandWindow = function(winId) {
+  const w = window.openWindows.find(x => x.winId === winId);
+  const el = document.getElementById(winId);
+  if (!w || !el) return;
+  if (!w.isFullscreen) {
+    w.origX = el.offsetLeft; w.origY = el.offsetTop;
+    w.origW = el.offsetWidth; w.origH = el.offsetHeight;
+    w.isFullscreen = true;
+    el.classList.add('is-fullscreen');
+    bringWindowToFront(winId);
+  } else {
+    w.isFullscreen = false;
+    el.classList.remove('is-fullscreen');
+    el.style.left = w.origX + 'px'; el.style.top = w.origY + 'px';
+    el.style.width = w.origW + 'px'; el.style.height = w.origH + 'px';
+  }
+};
+
+function renderDocks() {
+  const rEl = document.getElementById('dock-right');
+  const lEl = document.getElementById('dock-left');
+  if (!rEl || !lEl) return;
+  rEl.innerHTML = window.minimizedDocks.slice(0, 8).map((t, i) => `
+    <div class="dock-pill" onclick="restoreDock(${i})">
+      <span>📌 ${esc(t.name)}</span>
+      <span onclick="event.stopPropagation();removeDock(${i})">✕</span>
+    </div>
+  `).join('');
+  lEl.innerHTML = window.minimizedDocks.slice(8, 16).map((t, i) => `
+    <div class="dock-pill" onclick="restoreDock(${8 + i})">
+      <span>📌 ${esc(t.name)}</span>
+      <span onclick="event.stopPropagation();removeDock(${8 + i})">✕</span>
+    </div>
+  `).join('');
+}
+
+window.restoreDock = function(idx) {
+  const item = window.minimizedDocks.splice(idx, 1)[0];
+  renderDocks();
+  if (item) createTermWindow(item.data, item.name);
+};
+window.removeDock = function(idx) {
+  window.minimizedDocks.splice(idx, 1);
+  renderDocks();
+};
+
+function enableWindowDrag(winId) {
+  const win = document.getElementById(winId);
+  const bar = document.getElementById('bar-' + winId);
+  if (!win || !bar) return;
+  let dragging = false, sx = 0, sy = 0, il = 0, it = 0;
+
+  function move(cx, cy) {
+    if (!dragging) return;
+    win.style.left = Math.max(0, Math.min(window.innerWidth - 80, il + cx - sx)) + 'px';
+    win.style.top = Math.max(0, Math.min(window.innerHeight - 60, it + cy - sy)) + 'px';
+  }
+  function onMM(e) { move(e.clientX, e.clientY); }
+  function onTM(e) {
+    if (!dragging || !e.touches || !e.touches.length) return;
+    if (e.cancelable) e.preventDefault();
+    move(e.touches[0].clientX, e.touches[0].clientY);
+  }
+  function stop() {
+    dragging = false;
+    window.removeEventListener('mousemove', onMM);
+    window.removeEventListener('mouseup', stop);
+    window.removeEventListener('touchmove', onTM);
+    window.removeEventListener('touchend', stop);
+  }
+  function start(cx, cy) {
+    const w = window.openWindows.find(x => x.winId === winId);
+    if (w && w.isFullscreen) return;
+    dragging = true; sx = cx; sy = cy; il = win.offsetLeft; it = win.offsetTop;
+    bringWindowToFront(winId);
+    window.addEventListener('mousemove', onMM);
+    window.addEventListener('mouseup', stop);
+    window.addEventListener('touchmove', onTM, { passive: false });
+    window.addEventListener('touchend', stop);
+  }
+  bar.addEventListener('mousedown', e => { if (!e.target.closest('.mac-dot')) start(e.clientX, e.clientY); });
+  bar.addEventListener('touchstart', e => {
+    if (!e.target.closest('.mac-dot') && e.touches.length === 1) start(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+}
+
+function enableWindowResize(winId) {
+  const win = document.getElementById(winId);
+  if (!win) return;
+  win.querySelectorAll('.win-resize-handle').forEach(h => {
+    const dir = h.getAttribute('data-dir');
+    let resizing = false, sx = 0, sy = 0, iw = 0, ih = 0;
+    function move(cx, cy) {
+      if (!resizing) return;
+      if (dir.includes('r')) win.style.width = Math.max(260, iw + (cx - sx)) + 'px';
+      if (dir.includes('b')) win.style.height = Math.max(200, ih + (cy - sy)) + 'px';
+    }
+    function onMM(e) { move(e.clientX, e.clientY); }
+    function onTM(e) {
+      if (!resizing || !e.touches.length) return;
+      if (e.cancelable) e.preventDefault();
+      move(e.touches[0].clientX, e.touches[0].clientY);
+    }
+    function stop() {
+      resizing = false;
+      window.removeEventListener('mousemove', onMM);
+      window.removeEventListener('mouseup', stop);
+      window.removeEventListener('touchmove', onTM);
+      window.removeEventListener('touchend', stop);
+    }
+    function start(cx, cy) {
+      resizing = true; sx = cx; sy = cy; iw = win.offsetWidth; ih = win.offsetHeight;
+      bringWindowToFront(winId);
+      window.addEventListener('mousemove', onMM);
+      window.addEventListener('mouseup', stop);
+      window.addEventListener('touchmove', onTM, { passive: false });
+      window.addEventListener('touchend', stop);
+    }
+    h.addEventListener('mousedown', e => { e.stopPropagation(); start(e.clientX, e.clientY); });
+    h.addEventListener('touchstart', e => {
+      e.stopPropagation();
+      if (e.touches.length === 1) start(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+  });
+}
+
+/* ==================== 6. 方案 A：本地大模型 + TalkTree 原生 RAG 四大核心能力 ==================== */
+window.switchRagSubTab = function(idx) {
+  for (let i = 0; i < 4; i++) {
+    const btn = document.getElementById('rag-subtab-btn-' + i);
+    const panel = document.getElementById('rag-subpanel-' + i);
+    if (btn) btn.classList.toggle('primary', i === idx);
+    if (panel) panel.style.display = (i === idx) ? 'block' : 'none';
+  }
+  if (idx === 3 && (!currentMmNodes || !currentMmNodes.length)) {
+    buildChapterMindMapFromUI();
+  }
+};
+
+function populateBookChapterSelectors() {
+  const byBook = {};
+  (window.DB.questions || []).forEach(q => {
+    const bn = q.book_name || '现代汉语通论';
+    const ch = q.chapter || '第一章 绪论';
+    byBook[bn] = byBook[bn] || new Set();
+    byBook[bn].add(ch);
+  });
+  let books = Object.keys(byBook);
+  if (!books.length) {
+    books = ['现代汉语通论（上）', '现代汉语通论（下）', '语言学纲要', '古代汉语', '中国文化要略'];
+    byBook['现代汉语通论（上）'] = new Set(['第一章 语音', '第二章 文字', '第三章 词汇']);
+    byBook['现代汉语通论（下）'] = new Set(['第四章 语法', '第五章 修辞']);
+    byBook['语言学纲要'] = new Set(['第一章 语言的功能', '第二章 语言是符号系统', '第三章 语音和音系']);
+  }
+  window.__BOOK_CHAPTER_MAP = {};
+  books.forEach(b => { window.__BOOK_CHAPTER_MAP[b] = Array.from(byBook[b] || ['第一章']); });
+
+  ['imp-book-select', 'gen-book-select', 'mm-book-select'].forEach(selId => {
+    const el = document.getElementById(selId);
+    if (!el) return;
+    el.innerHTML = books.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+  });
+  updateChapterSelect('imp-book-select', 'imp-chapter-select');
+  updateChapterSelect('gen-book-select', 'gen-chapter-select');
+  updateChapterSelect('mm-book-select', 'mm-chapter-select');
+}
+
+window.updateChapterSelect = function(bookSelId, chSelId) {
+  const bEl = document.getElementById(bookSelId);
+  const cEl = document.getElementById(chSelId);
+  if (!bEl || !cEl) return;
+  const chapters = (window.__BOOK_CHAPTER_MAP && window.__BOOK_CHAPTER_MAP[bEl.value]) || ['第一章'];
+  cEl.innerHTML = chapters.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+};
+
+/* 本地 RAG 检索器：联合检索 TalkTree 原生 SQLite 知识库 + 汉硕教材切片 */
+function retrieveLocalRagChunks(queryText, topK) {
+  topK = topK || 4;
+  const results = [];
+
+  // 1. 优先调用 TalkTree 原生 Room/SQLite BM25/N-gram 检索桥接器
+  try {
+    if (window.HanshuoNative && typeof window.HanshuoNative.searchTalkTreeRag === 'function') {
+      const nativeJson = window.HanshuoNative.searchTalkTreeRag(queryText, topK);
+      if (nativeJson) {
+        const parsed = JSON.parse(nativeJson);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(c => results.push(c));
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 2. 同时检索汉硕专业教材结构化切片库
+  const qClean = String(queryText || '').trim();
+  const pool = (window.DB && window.DB.questions && window.DB.questions.length)
+    ? window.DB.questions
+    : ((window.__BUILTIN_QUESTIONS_DATA && window.__BUILTIN_QUESTIONS_DATA.questions) || []);
+
+  const scored = [];
+  for (let i = 0; i < pool.length; i++) {
+    const item = pool[i];
+    let score = 0;
+    if (item.stem === qClean) score += 100;
+    else if (item.stem && item.stem.includes(qClean)) score += 55;
+    else if (qClean.includes(item.stem) && item.stem.length >= 2) score += 40;
+
+    const fullTxt = getCardPlainDigest(item) + ' ' + (item.explain || '');
+    if (fullTxt.includes(qClean)) score += 25;
+    if (score > 0) scored.push({ score, item });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  scored.slice(0, topK).forEach((s, idx) => {
+    const it = s.item;
+    results.push({
+      docTitle: it.book_name || '现代汉语通论',
+      chapter: it.chapter || '核心章节',
+      chunkIndex: idx + 1,
+      score: (s.score / 100).toFixed(2),
+      content: getCardPlainDigest(it),
+      rawQuestion: it
+    });
+  });
+
+  return results;
+}
+
+/* 能力 ①：精准原文名词解释 */
+window.runRagTermExplain = function(customTerm) {
+  const inp = document.getElementById('rag-term-input');
+  const term = (customTerm || (inp ? inp.value : '') || '').trim();
+  if (!term) { showToast('请输入要解释的专有名词'); return; }
+  if (inp) inp.value = term;
+
+  const box = document.getElementById('rag-term-result');
+  const chunks = retrieveLocalRagChunks(term, 4);
+
+  // 检查是否可调用原生本地大模型推理
+  let nativeLlmNote = 'TalkTree 端侧 BM25/N-Gram 知识库 + 原文段落级锚定';
+  try {
+    if (window.HanshuoNative && typeof window.HanshuoNative.getActiveEngineSummary === 'function') {
+      nativeLlmNote = window.HanshuoNative.getActiveEngineSummary();
+    }
+  } catch (e) {}
+
+  const primaryQ = (chunks[0] && chunks[0].rawQuestion) || window.DB.questions.find(x => x.stem === term);
+  const citationsHtml = chunks.length
+    ? chunks.map((c, i) => `<span class="rag-cite-badge">【${i + 1}】《${esc(c.docTitle)}》· ${esc(c.chapter)} (相关度 ${c.score})</span>`).join('')
+    : `<span class="rag-cite-badge">【1】《现代汉语通论》· 原文知识库检索</span>`;
+
+  let html = `
+    <div style="padding:12px;border-radius:14px;background:var(--surface-variant);border:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-family:var(--serif-font);font-size:19px;font-weight:700;color:var(--primary)">「${esc(term)}」原文精准名词解释</span>
+        <span style="font-size:11.5px;color:var(--sub)">${esc(nativeLlmNote)}</span>
+      </div>
+      <div style="margin-bottom:10px">${citationsHtml}</div>
+  `;
+
+  // 注入已合并反哺的支线洞察卡片 (Branch Synthesis Feedback)
+  if (window.__MERGED_BRANCH_INSIGHTS && window.__MERGED_BRANCH_INSIGHTS.length) {
+    const latestInsights = window.__MERGED_BRANCH_INSIGHTS.slice(-2);
+    html += latestInsights.map(ins => `
+      <div class="branch-insight-bubble" style="margin-top:4px;margin-bottom:10px">
+        <div><span class="insight-tag">🌿 已反哺支线探索结论</span> <b style="font-size:12px;color:#166534">「${esc(ins.branchName)}」</b></div>
+        <div class="insight-quote">“${esc(ins.insight)}”</div>
+        <div class="insight-meta"><span>母会话与大模型推理已采纳该探索成果</span></div>
+      </div>
+    `).join('');
+  }
+
+  if (primaryQ) {
+    html += renderAnswerHtml(primaryQ, false);
+  } else {
+    html += `
+      <div class="layer core">
+        <div class="lab"><span>① 原文精准定义（端侧 RAG 合成）</span><span>【1】教材原文溯源</span></div>
+        <div><b>${esc(term)}</b>是汉语语言学及应用语言学中的核心概念。${chunks[0] ? window.linkify(chunks[0].content) : '指语言系统中具有特定结构层级与交际功能的语言学范畴。'}</div>
+      </div>
+      <div class="layer">
+        <div class="lab"><span>② 审稿级/阅卷级答题踩分要点</span></div>
+        <div>作答「${esc(term)}」名词解释时，须严格遵循<b>「属+种差定义 → 分类/结构特征 → 正反典型语料例证 → 语法/音系价值」</b>四步法，切忌只写空泛套话而漏写语料例证。</div>
+      </div>
+    `;
+  }
+  html += `</div>`;
+  box.innerHTML = html;
+};
+
+window.openTermRagInPopup = function(term) {
+  switchTab(3);
+  switchRagSubTab(0);
+  runRagTermExplain(term);
+};
+
+/* 能力 ②：论述题与简答题重要性推理引擎 */
+window.runRagImportanceReasoning = function() {
+  const book = document.getElementById('imp-book-select').value;
+  const chapter = document.getElementById('imp-chapter-select').value;
+  const topic = document.getElementById('imp-topic-input').value.trim();
+  const box = document.getElementById('rag-importance-result');
+
+  const chQuestions = (window.DB.questions || []).filter(q => q.book_name === book && q.chapter === chapter);
+  const essayQs = chQuestions.filter(q => q.type === '论述题' || q.type === '简答题' || q.type === '分析题');
+  const coreTerms = chQuestions.filter(q => q.type === '名词解释').slice(0, 8).map(q => q.stem);
+
+  const starLevel = essayQs.length >= 4 ? '★★★★★ (必考核心 · 命题权重极高)' : '★★★★☆ (高频重点 · 简答与分析常考)';
+  const targetTitle = topic || `${book} · ${chapter}`;
+
+  let sampleRubric = '';
+  if (essayQs.length) {
+    sampleRubric = essayQs.slice(0, 3).map((q, i) => `
+      <div class="layer" style="margin-top:8px">
+        <div class="lab"><span>核心母题 ${i + 1}（${esc(q.type)} · ${q.score || 10}分）</span><span>重要度 ★★★★★</span></div>
+        <div style="font-weight:700;margin-bottom:4px">${window.linkify(q.stem)}</div>
+        <div style="font-size:13.5px">${window.linkify((q.answer || getCardPlainDigest(q)).slice(0, 260))}…</div>
+      </div>
+    `).join('');
+  }
+
+  box.innerHTML = `
+    <div style="padding:14px;border-radius:14px;background:var(--surface-variant);border:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+        <span style="font-weight:700;font-size:16px">📊 命题重要性推理报告：${esc(targetTitle)}</span>
+        <span class="sufei-seal-badge">${starLevel}</span>
+      </div>
+      <div class="layer core">
+        <div class="lab"><span>一、 命题概率与教材理论地位推理</span><span>RAG 考频统计：本章共 ${chQuestions.length} 个考题锚点</span></div>
+        <div>
+          1. <b>理论枢纽度</b>：本章在《${esc(book)}》知识体系中处于承上启下的结构枢纽位置，直接关联核心术语群：${coreTerms.map(t => `<span class="term-link" onclick="openTermPopup('${t.replace(/'/g,"\\'")}')">${esc(t)}</span>`).join('、') || '核心语言学范畴'}。<br>
+          2. <b>题型分布规律</b>：名词解释侧重考察基础概念边界，<b>简答题（10分档）</b>高频考察分类标准与结构特征，<b>论述题（15~20分档）</b>则倾向于跨章节结合语言演变或对外汉语教学偏误进行综合思辨。
+        </div>
+      </div>
+      <div class="layer examples">
+        <div class="lab"><span>二、 简答题 & 论述题阅卷踩分矩阵（三段论结构）</span></div>
+        <div>
+          • <b>第一层（概念界定 · 占 25% 分值）</b>：精准给出核心术语的教材原文定义与判定形式标准；<br>
+          • <b>第二层（层级剖析与正反例证 · 占 50% 分值）</b>：分条列举语音/语法/语义特征，每一条必须附带至少 2 个典型汉语语料实例；<br>
+          • <b>第三层（学术延展与教学应用 · 占 25% 分值）</b>：指出现代汉语规范化或国际中文教育中的常见偏误及解释力。
+        </div>
+      </div>
+      ${sampleRubric}
+    </div>
+  `;
+};
+
+/* 能力 ③：分档分篇章智能出题系统 */
+window.runRagTieredQuestionGen = function() {
+  const book = document.getElementById('gen-book-select').value;
+  const chapter = document.getElementById('gen-chapter-select').value;
+  const tier = parseInt(document.getElementById('gen-tier-select').value) || 2;
+  const qType = document.getElementById('gen-type-select').value;
+  const box = document.getElementById('rag-gen-result');
+
+  const tierNames = { 1: '基础巩固档 (L1)', 2: '强化拔高档 (L2)', 3: '冲刺压轴档 (L3)' };
+  const pool = (window.DB.questions || []).filter(q => q.book_name === book && q.chapter === chapter);
+  const typeMatched = pool.filter(q => q.type === qType);
+  const sourceSeeds = (typeMatched.length ? typeMatched : pool).slice(0, 5);
+
+  const generated = [];
+  const now = Date.now();
+  if (sourceSeeds.length) {
+    sourceSeeds.slice(0, 3).forEach((seed, idx) => {
+      const newId = `RAG-GEN-${now}-${idx}`;
+      const stemPrefix = tier === 3 ? '【冲刺压轴·深度辨析】' : (tier === 2 ? '【强化拔高】' : '【基础必背】');
+      generated.push({
+        id: newId,
+        book_id: seed.book_id || 'rag_gen',
+        book_name: book,
+        chapter: chapter,
+        type: qType,
+        level: tier + 2,
+        score: qType === '论述题' ? 15 : (qType === '简答题' ? 10 : 5),
+        stem: qType === seed.type ? seed.stem : `${stemPrefix}试结合《${book}》${chapter}原文，阐述「${seed.stem}」的核心特征与理论价值。`,
+        answer: getCardPlainDigest(seed),
+        layers: seed.layers || null,
+        options: seed.options || null
+      });
+    });
+  } else {
+    generated.push({
+      id: `RAG-GEN-${now}-0`,
+      book_id: 'rag_gen',
+      book_name: book,
+      chapter: chapter,
+      type: qType,
+      level: tier + 2,
+      score: 10,
+      stem: `【${tierNames[tier]}】结合《${book}》${chapter}核心理论，分析核心概念的判定标准与典型例证。`,
+      answer: `本题由条畅本地大模型 + RAG 引擎根据《${book}》${chapter}自动命题。作答时应先界定核心概念，再分条阐述结构特征并举出汉语实证语料。`
+    });
+  }
+
+  window.__LAST_GEN_QUESTIONS = generated;
+  box.innerHTML = `
+    <div style="margin-top:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:700;color:var(--primary)">✅ 已按「${esc(tierNames[tier])} · ${esc(qType)}」生成 ${generated.length} 道命题</span>
+        <button class="btn sm" onclick="saveGeneratedQuestionsToBank()">📥 一键收入本地题库</button>
+      </div>
+      ${generated.map((q, i) => `
+        <div class="card" style="margin-bottom:8px;background:var(--surface)">
+          <div style="font-size:12px;color:var(--sub);margin-bottom:4px">${esc(q.book_name)} · ${esc(q.chapter)} · ${esc(q.type)} (${q.score}分)</div>
+          <div style="font-weight:700;font-size:15px;margin-bottom:6px">${i + 1}. ${window.linkify(q.stem)}</div>
+          ${renderAnswerHtml(q, false)}
+        </div>
+      `).join('')}
+    </div>
+  `;
+};
+
+window.saveGeneratedQuestionsToBank = function() {
+  const gen = window.__LAST_GEN_QUESTIONS || [];
+  if (!gen.length) return;
+  const custom = getCustomQuestions();
+  gen.forEach(q => {
+    if (!custom.some(x => x.id === q.id)) custom.unshift(q);
+  });
+  saveCustomQuestions(custom);
+  rebuildActiveDatabase();
+  showToast('已将 ' + gen.length + ' 道分档命题并入本地题库！');
+};
+
+/* ==================== 7. 能力 ④：分篇章生成 TalkTree 可拖动思维导图词条卡片 ==================== */
+let currentMmNodes = [];
+let currentMmEdges = [];
+let currentMmTitle = '';
+let currentMmScale = 1.0;
+
+window.zoomMindMap = function(delta) {
+  setMindMapScale(currentMmScale + delta);
+};
+
+window.setMindMapScale = function(scale) {
+  currentMmScale = Math.max(0.35, Math.min(2.0, Math.round(scale * 100) / 100));
+  const stage = document.getElementById('mindmap-stage');
+  const nodesBox = document.getElementById('mindmap-nodes');
+  const svg = document.getElementById('mindmap-svg');
+  const disp = document.getElementById('mm-zoom-display');
+
+  if (disp) disp.textContent = Math.round(currentMmScale * 100) + '%';
+  if (nodesBox) nodesBox.style.transform = `scale(${currentMmScale})`;
+  if (svg) svg.style.transform = `scale(${currentMmScale})`;
+
+  // 语义缩放核心依据 (Sensecape arXiv:2305.11483):
+  // 当缩放比例 scale < 0.6f 时，自动隐藏卡片内繁琐长文本，进入高层抽象大纲模式
+  if (stage) {
+    if (currentMmScale < 0.6) {
+      stage.classList.add('semantic-compact');
+    } else {
+      stage.classList.remove('semantic-compact');
+    }
+  }
+  redrawMindMapEdges();
+};
+
+window.jumpToChapterMindMap = function(bookName, chapterName) {
+  closeSufeiImmersiveDetail();
+  closeSubPage('sub-page-chapter');
+  switchTab(3);
+  switchRagSubTab(3);
+  const bSel = document.getElementById('mm-book-select');
+  const cSel = document.getElementById('mm-chapter-select');
+  if (bSel && bookName) {
+    bSel.value = bookName;
+    updateChapterSelect('mm-book-select', 'mm-chapter-select');
+  }
+  if (cSel && chapterName) cSel.value = chapterName;
+  buildChapterMindMapFromUI();
+};
+
+window.buildChapterMindMapFromUI = function() {
+  const bSel = document.getElementById('mm-book-select');
+  const cSel = document.getElementById('mm-chapter-select');
+  const book = bSel ? bSel.value : '现代汉语通论（上）';
+  const chapter = cSel ? cSel.value : '第一章 语音';
+  generateChapterMindMap(book, chapter);
+};
+
+window.generateChapterMindMap = function(book, chapter) {
+  currentMmTitle = `${book} · ${chapter}`;
+  const qs = (window.DB.questions || []).filter(q => q.book_name === book && q.chapter === chapter);
+  const termQs = qs.filter(q => q.type === '名词解释');
+  const picked = (termQs.length ? termQs : qs).slice(0, 8);
+
+  const stage = document.getElementById('mindmap-stage');
+  const sw = (stage && stage.clientWidth) ? stage.clientWidth : 360;
+  const cx = Math.max(20, Math.floor(sw / 2 - 102));
+
+  currentMmNodes = [
+    {
+      id: 'mm-root',
+      title: chapter || '篇章核心脉络',
+      subtitle: book || '教材知识树根节点',
+      x: cx,
+      y: 18,
+      isRoot: true,
+      term: chapter
+    }
+  ];
+  currentMmEdges = [];
+
+  picked.forEach((q, idx) => {
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const nx = col === 0 ? 14 : Math.max(170, sw - 208);
+    const ny = 102 + row * 92;
+    const nid = 'mm-node-' + idx;
+    currentMmNodes.push({
+      id: nid,
+      title: q.stem,
+      subtitle: getCardPlainDigest(q).slice(0, 48) + '…',
+      x: nx,
+      y: ny,
+      isRoot: false,
+      term: q.stem,
+      qid: q.id
+    });
+    currentMmEdges.push({ from: 'mm-root', to: nid });
+  });
+
+  renderMindMapDOM();
+  setMindMapScale(1.0);
+
+  // 绑定鼠标滚轮与移动端触控捏合缩放
+  if (stage && !stage.__zoomBound) {
+    stage.__zoomBound = true;
+    stage.addEventListener('wheel', e => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.08 : -0.08;
+      zoomMindMap(delta);
+    }, { passive: false });
+
+    let initialDist = 0;
+    stage.addEventListener('touchstart', e => {
+      if (e.touches.length === 2) {
+        initialDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      }
+    }, { passive: true });
+
+    stage.addEventListener('touchmove', e => {
+      if (e.touches.length === 2 && initialDist > 0) {
+        const curDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const ratio = curDist / initialDist;
+        if (Math.abs(ratio - 1) > 0.05) {
+          zoomMindMap((ratio - 1) * 0.2);
+          initialDist = curDist;
+        }
+      }
+    }, { passive: true });
+  }
+};
+
+window.resetMindMapLayout = function() {
+  buildChapterMindMapFromUI();
+  setMindMapScale(1.0);
+  showToast('已重置思维导图卡片排布与缩放');
+};
+
+function renderMindMapDOM() {
+  const nodesBox = document.getElementById('mindmap-nodes');
+  if (!nodesBox) return;
+
+  nodesBox.innerHTML = currentMmNodes.map(n => `
+    <div class="mm-node-card ${n.isRoot ? 'root-node' : ''}" id="${n.id}" style="left:${n.x}px;top:${n.y}px">
+      <div class="mm-node-title">
+        <span>${esc(n.title)}</span>
+        <span style="font-size:11px;color:var(--primary)">✥ 拖拽</span>
+      </div>
+      <div class="mm-node-snippet">${window.linkify(n.subtitle)}</div>
+      ${!n.isRoot ? `
+      <div class="mm-node-actions">
+        <span class="mm-node-act" onclick="event.stopPropagation();openTermPopup('${n.term.replace(/'/g, "\\'")}')">📌 悬浮小窗</span>
+        <span class="mm-node-act" onclick="event.stopPropagation();openTermRagInPopup('${n.term.replace(/'/g, "\\'")}')">🤖 RAG名解</span>
+      </div>` : ''}
+    </div>
+  `).join('');
+
+  currentMmNodes.forEach(n => bindMindMapCardDrag(n));
+  redrawMindMapEdges();
+}
+
+function redrawMindMapEdges() {
+  const svg = document.getElementById('mindmap-svg');
+  if (!svg) return;
+  let paths = '';
+  const isCompact = currentMmScale < 0.6;
+  currentMmEdges.forEach(edge => {
+    const f = currentMmNodes.find(x => x.id === edge.from);
+    const t = currentMmNodes.find(x => x.id === edge.to);
+    if (!f || !t) return;
+    const x1 = f.x + (isCompact ? 72 : 100), y1 = f.y + (isCompact ? 30 : 38);
+    const x2 = t.x + (isCompact ? 72 : 96),  y2 = t.y + (isCompact ? 14 : 24);
+    const cy = (y1 + y2) / 2;
+    paths += `<path d="M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}" stroke="var(--primary)" stroke-width="2" fill="none" stroke-dasharray="4,3" opacity="0.65"/>`;
+  });
+  svg.innerHTML = paths;
+}
+
+function bindMindMapCardDrag(nodeObj) {
+  const el = document.getElementById(nodeObj.id);
+  if (!el) return;
+  let dragging = false, sx = 0, sy = 0, ix = 0, iy = 0;
+
+  function move(cx, cy) {
+    if (!dragging) return;
+    const scale = currentMmScale || 1.0;
+    nodeObj.x = Math.max(4, ix + (cx - sx) / scale);
+    nodeObj.y = Math.max(4, iy + (cy - sy) / scale);
+    el.style.left = nodeObj.x + 'px';
+    el.style.top = nodeObj.y + 'px';
+    redrawMindMapEdges();
+  }
+  function onMM(e) { move(e.clientX, e.clientY); }
+  function onTM(e) {
+    if (!dragging || !e.touches.length) return;
+    if (e.cancelable) e.preventDefault();
+    move(e.touches[0].clientX, e.touches[0].clientY);
+  }
+  function stop() {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove('dragging');
+    window.removeEventListener('mousemove', onMM);
+    window.removeEventListener('mouseup', stop);
+    window.removeEventListener('touchmove', onTM);
+    window.removeEventListener('touchend', stop);
+  }
+  function start(cx, cy) {
+    dragging = true; sx = cx; sy = cy; ix = nodeObj.x; iy = nodeObj.y;
+    el.classList.add('dragging');
+    window.addEventListener('mousemove', onMM);
+    window.addEventListener('mouseup', stop);
+    window.addEventListener('touchmove', onTM, { passive: false });
+    window.addEventListener('touchend', stop);
+  }
+
+  el.addEventListener('mousedown', e => {
+    if (e.target.closest('.mm-node-act') || e.target.closest('.term-link')) return;
+    start(e.clientX, e.clientY);
+  });
+  el.addEventListener('touchstart', e => {
+    if (e.target.closest('.mm-node-act') || e.target.closest('.term-link')) return;
+    if (e.touches.length === 1) start(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: true });
+}
+
+window.syncMindMapToTalkTree = function() {
+  if (!currentMmNodes.length) { showToast('请先生成篇章思维导图'); return; }
+  const payload = JSON.stringify({
+    title: currentMmTitle,
+    timestamp: Date.now(),
+    nodes: currentMmNodes,
+    edges: currentMmEdges
+  });
+  try {
+    localStorage.setItem('talktree_synced_mindmap_' + Date.now(), payload);
+    if (window.HanshuoNative && typeof window.HanshuoNative.syncMindMapToTalkTree === 'function') {
+      window.HanshuoNative.syncMindMapToTalkTree(currentMmTitle, payload);
+    }
+  } catch (e) {}
+  showToast('🌳 已将「' + currentMmTitle + '」共 ' + currentMmNodes.length + ' 张可拖动词条卡同步至条畅多维思维树！');
+};
+
+/* ==================== 8. 教材目录、历年真题、模考、挖空与收藏夹 ==================== */
+window.switchTab = function(idx) {
+  currentTabIndex = idx;
+  const track = document.getElementById('viewpager-track');
+  if (track) track.style.transform = `translate3d(-${idx * 100}vw, 0, 0)`;
+  document.querySelectorAll('.tabbar-item').forEach((btn, i) => {
+    btn.classList.toggle('on', i === idx);
+  });
+  if (idx === 1) renderBooks();
+  if (idx === 2) renderZhenti();
+  if (idx === 4) { updateSandboxStatsUI(); renderFav(); }
+};
+
+window.openSubPage = function(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+};
+window.closeSubPage = function(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.remove('active');
+};
+
+window.renderBooks = function() {
+  const box = document.getElementById('browse-list');
+  if (!box) return;
+  const byBook = {};
+  (window.DB.questions || []).forEach(q => {
+    byBook[q.book_name] = byBook[q.book_name] || {};
+    byBook[q.book_name][q.chapter] = byBook[q.book_name][q.chapter] || [];
+    byBook[q.book_name][q.chapter].push(q);
+  });
+
+  const bookNames = Object.keys(byBook);
+  if (!bookNames.length) {
+    box.innerHTML = `
+      <div class="card" style="text-align:center;padding:32px">
+        <div style="font-size:16px;font-weight:700;margin-bottom:8px">当前题库为空（内置题库已清空）</div>
+        <div style="font-size:13px;color:var(--sub);margin-bottom:14px">您可以前往「题库·收藏」恢复官方 2430 题，或使用本地大模型生成新题目。</div>
+        <button class="btn" onclick="restoreBuiltinQuestionBank()">🔄 恢复官方内置题库</button>
+      </div>`;
+    return;
+  }
+
+  let h = '';
+  bookNames.forEach((bn, bIdx) => {
+    const chKeys = Object.keys(byBook[bn]);
+    const totalInBook = chKeys.reduce((acc, k) => acc + byBook[bn][k].length, 0);
+    h += `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div>
+          <div style="font-weight:700;font-size:16px">${esc(bn)}</div>
+          <div style="font-size:12px;color:var(--sub)">共 ${chKeys.length} 章 · ${totalInBook} 题</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn sm danger" onclick="deleteBookBank('${bn.replace(/'/g, "\\'")}', event)" title="删除整本教材题库">🗑️ 删书</button>
+        </div>
+      </div>
+      <div>`;
+    chKeys.forEach(ch => {
+      const count = byBook[bn][ch].length;
+      const safeBn = bn.replace(/'/g, "\\'");
+      const safeCh = ch.replace(/'/g, "\\'");
+      h += `<div style="padding:10px 12px;margin:7px 0;border-radius:12px;background:var(--surface-variant);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <div style="flex:1;min-width:160px;cursor:pointer;font-weight:600" onclick="openChapterQuestions('${safeBn}','${safeCh}')">
+          ${esc(ch)} <span style="font-size:12px;color:var(--sub);font-weight:400">(${count}题)</span>
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          <button class="btn sm ghost" onclick="openChapterQuestions('${safeBn}','${safeCh}')">刷题</button>
+          <button class="btn sm ghost" onclick="jumpToChapterMindMap('${safeBn}','${safeCh}')">🗺️ 导图卡</button>
+          <button class="btn sm danger" onclick="deleteChapterBank('${safeBn}','${safeCh}', event)">✕</button>
+        </div>
+      </div>`;
+    });
+    h += `</div></div>`;
+  });
+  box.innerHTML = h;
+};
+
+window.openChapterQuestions = function(bn, ch) {
+  const list = (window.DB.questions || []).filter(q => q.book_name === bn && q.chapter === ch);
+  window.currentCurList = list;
+  const title = `${bn} · ${ch}`;
+  document.getElementById('chapter-title').textContent = title;
+  const safeBn = bn.replace(/'/g, "\\'");
+  const safeCh = ch.replace(/'/g, "\\'");
+
+  document.getElementById('chapter-body').innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="btn sm" onclick="startExamWith(window.currentCurList, '${title.replace(/'/g, "\\'")}')">📝 全真模考</button>
+      <button class="btn sm ghost" onclick="startBlankWith(window.currentCurList, '${title.replace(/'/g, "\\'")}')">✏️ 挖空背诵</button>
+      <button class="btn sm ghost" onclick="jumpToChapterMindMap('${safeBn}','${safeCh}')">🗺️ 本章可拖动思维导图卡</button>
+    </div>
+  ` + list.map((q, idx) => `
+    <div class="card" data-qid="${q.id}">
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--sub);margin-bottom:6px">
+        <span>${esc(q.type)} · 第 ${idx + 1} 题 (${q.score || 5}分)</span>
+        <div style="display:flex;gap:10px;align-items:center">
+          <span style="cursor:pointer;color:var(--primary);font-weight:600" onclick="toggleFav('${q.id}')">${isFav(q.id) ? '★ 已收藏' : '☆ 收藏'}</span>
+          <span style="cursor:pointer;color:#DC2626" onclick="deleteSingleQuestion('${q.id}', event)" title="从题库删除此题">🗑️ 删除</span>
+        </div>
+      </div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:8px">${idx + 1}. ${window.linkify(q.stem)}</div>
+      ${q.options ? q.options.map(o => `<div class="opt">${window.linkify(o)}</div>`).join('') : ''}
+      ${renderAnswerHtml(q, true)}
+    </div>
+  `).join('');
+  openSubPage('sub-page-chapter');
+};
+
+window.renderZhenti = function() {
+  const box = document.getElementById('zhenti-list');
+  if (!box) return;
+  const papers = (window.ZT && window.ZT.papers) || [];
+  if (!papers.length) {
+    box.innerHTML = `<div class="card" style="text-align:center;padding:30px;color:var(--sub)">当前真题库为空，可在「题库·收藏」页恢复内置题库。</div>`;
+    return;
+  }
+  box.innerHTML = papers.map(p => {
+    const totalQ = (p.sections || []).reduce((s, x) => s + (x.items || []).length, 0);
+    return `<div class="card" style="cursor:pointer" onclick="openZtPaper('${p.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:16.5px;font-weight:700">${esc(p.school)} · ${esc(p.year)} 年真题 (${esc(p.code)})</div>
+        <span class="sufei-seal-badge">${totalQ} 题</span>
+      </div>
+      <div style="font-size:12.5px;color:var(--sub);margin-top:4px">${esc(p.subject)} · 点击查看原卷结构与超链接解析</div>
+    </div>`;
+  }).join('');
+};
+
+window.openZtPaper = function(pid) {
+  const p = ((window.ZT && window.ZT.papers) || []).find(x => x.id === pid);
+  if (!p) return;
+  document.getElementById('ztpaper-title').textContent = `${p.school} ${p.year} (${p.code})`;
+  let h = `<div class="card">
+    <div style="font-size:17px;font-weight:700">${esc(p.school)} ${esc(p.year)} 年硕士研究生入学考试真题</div>
+    <div style="font-size:12.5px;color:var(--sub);margin-top:4px">科目：${esc(p.subject)} (${esc(p.code)})</div>
+  </div>`;
+  (p.sections || []).forEach(sec => {
+    h += `<div style="font-weight:700;font-size:15px;margin:14px 0 8px;padding-left:8px;border-left:4px solid var(--primary)">${esc(sec.name)}</div>`;
+    (sec.items || []).forEach(q => {
+      h += `<div class="card">
+        <div style="font-size:12px;color:var(--sub);margin-bottom:4px">${esc(q.type || sec.name)} · 题号 ${esc(q.no || '')}</div>
+        <div style="font-weight:700;margin-bottom:8px">${window.linkify(q.stem)}</div>
+        ${q.options ? q.options.map(o => `<div class="opt">${window.linkify(o)}</div>`).join('') : ''}
+        ${renderAnswerHtml(q, true)}
+      </div>`;
+    });
+  });
+  document.getElementById('ztpaper-body').innerHTML = h;
+  openSubPage('sub-page-ztpaper');
+};
+
+/* 挖空背诵训练 */
+let bList = [], bIdx = 0;
+window.startBlankWith = function(list, title) {
+  if (!list || !list.length) { showToast('当前列表无题目'); return; }
+  bList = list; bIdx = 0;
+  document.getElementById('blank-title').textContent = '挖空背诵 · ' + title;
+  renderBlankCard();
+  openSubPage('sub-page-blank');
+};
+
+function makeBlankHtml(q) {
+  let text = esc(getCardPlainDigest(q));
+  const terms = Object.keys((window.TERMS && window.TERMS.terms) || {}).filter(t => t.length >= 2 && text.includes(t));
+  const picks = (Array.isArray(q.blank_keys) && q.blank_keys.length ? q.blank_keys : terms).slice(0, 4);
+  picks.forEach(k => {
+    if (!k) return;
+    const safeK = esc(k);
+    text = text.replace(new RegExp(safeK.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+      `<span class="blank" onclick="this.classList.toggle('revealed')">${safeK}</span>`);
+  });
+  return text;
+}
+
+function renderBlankCard() {
+  const q = bList[bIdx];
+  if (!q) return;
+  document.getElementById('blank-body').innerHTML = `
+    <div class="card">
+      <div style="font-size:12.5px;color:var(--sub);margin-bottom:6px">第 ${bIdx + 1} / ${bList.length} 题 · ${esc(q.type)}</div>
+      <div style="font-size:18px;font-weight:700;font-family:var(--serif-font);margin-bottom:12px">${window.linkify(q.stem)}</div>
+      <div class="layer core" style="line-height:2.0">${makeBlankHtml(q)}</div>
+      <div style="font-size:12px;color:var(--sub);margin-top:8px">💡 点击高亮色块可显隐核心挖空术语</div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button class="btn ghost" onclick="if(bIdx>0){bIdx--;renderBlankCard();}">← 上一题</button>
+        <button class="btn" onclick="if(bIdx<bList.length-1){bIdx++;renderBlankCard();}else{showToast('已完成本组挖空背诵！');closeSubPage('sub-page-blank');}">下一题 →</button>
+      </div>
+    </div>
+  `;
+}
+
+/* 全真模考 */
+let examList = [], examIdx = 0, examAnswers = {};
+window.startRandomMockExam = function() {
+  const pool = (window.DB.questions || []).slice();
+  if (!pool.length) { showToast('当前题库为空'); return; }
+  pool.sort(() => Math.random() - 0.5);
+  startExamWith(pool.slice(0, 25), '汉硕随机全真模考 (25题)');
+};
+
+window.startExamWith = function(list, title) {
+  if (!list || !list.length) { showToast('题目列表为空'); return; }
+  examList = list; examIdx = 0; examAnswers = {};
+  document.getElementById('exam-title').textContent = title;
+  renderExamCard();
+  openSubPage('sub-page-exam');
+};
+
+function renderExamCard() {
+  const q = examList[examIdx];
+  if (!q) return;
+  let h = `<div class="card">
+    <div style="font-size:12.5px;color:var(--sub);margin-bottom:6px">第 ${examIdx + 1} / ${examList.length} 题 · ${esc(q.type)}</div>
+    <div style="font-size:16.5px;font-weight:700;margin-bottom:12px">${examIdx + 1}. ${window.linkify(q.stem)}</div>`;
+  if (q.options && q.options.length) {
+    q.options.forEach(o => {
+      const code = o[0];
+      const sel = examAnswers[q.id] === code;
+      h += `<div class="opt ${sel ? 'selected' : ''}" onclick="examAnswers['${q.id}']='${code}';renderExamCard()">${esc(o)}</div>`;
+    });
+  }
+  if (examAnswers['__show_' + q.id]) {
+    h += renderAnswerHtml(q, true);
+  }
+  h += `<div style="display:flex;gap:10px;margin-top:16px">
+    <button class="btn ghost" onclick="if(examIdx>0){examIdx--;renderExamCard();}">← 上一题</button>
+    <button class="btn" onclick="if(!examAnswers['__show_${q.id}']){examAnswers['__show_${q.id}']=true;renderExamCard();}else if(examIdx<examList.length-1){examIdx++;renderExamCard();}else{showToast('已完成全真模考！');closeSubPage('sub-page-exam');}">
+      ${examAnswers['__show_' + q.id] ? (examIdx >= examList.length - 1 ? '完成交卷' : '下一题 →') : '核对答案与解析'}
+    </button>
+  </div></div>`;
+  document.getElementById('exam-body').innerHTML = h;
+}
+
+/* 收藏夹系统 */
+function getFavIds() {
+  try { return JSON.parse(localStorage.getItem('hanshuo_fav_ids') || '[]'); } catch (e) { return []; }
+}
+function isFav(qid) { return getFavIds().includes(qid); }
+window.toggleFav = function(qid) {
+  const ids = getFavIds();
+  const idx = ids.indexOf(qid);
+  if (idx >= 0) { ids.splice(idx, 1); showToast('已取消收藏'); }
+  else { ids.push(qid); showToast('⭐ 已加入收藏夹'); }
+  try { localStorage.setItem('hanshuo_fav_ids', JSON.stringify(ids)); } catch (e) {}
+  if (currentTabIndex === 4) renderFav();
+};
+
+window.renderFav = function() {
+  const box = document.getElementById('fav-list');
+  if (!box) return;
+  const ids = getFavIds();
+  const list = (window.DB.questions || []).filter(q => ids.includes(q.id));
+  if (!list.length) {
+    box.innerHTML = `<div class="card" style="text-align:center;color:var(--sub);padding:24px">暂无收藏题目，在章节刷题中点击「☆ 收藏」即可归档至此。</div>`;
+    return;
+  }
+  box.innerHTML = list.map((q, i) => `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--sub);margin-bottom:6px">
+        <span>${esc(q.book_name)} · ${esc(q.chapter)}</span>
+        <span style="cursor:pointer;color:var(--primary)" onclick="toggleFav('${q.id}')">取消收藏</span>
+      </div>
+      <div style="font-weight:700;margin-bottom:6px">${i + 1}. ${window.linkify(q.stem)}</div>
+      ${renderAnswerHtml(q, true)}
+    </div>
+  `).join('');
+};
+
+/* 检索与主题弹窗 */
+window.openSearchModal = function() {
+  filterTermIndex('');
+  document.getElementById('modal-search').classList.add('active');
+};
+window.closeSearchModal = function() {
+  document.getElementById('modal-search').classList.remove('active');
+};
+window.filterTermIndex = function(kw) {
+  const box = document.getElementById('term-index-chips');
+  const terms = Object.keys((window.TERMS && window.TERMS.terms) || {});
+  const q = (kw || '').trim().toLowerCase();
+  const matched = terms.filter(t => !q || t.toLowerCase().includes(q)).slice(0, 180);
+  box.innerHTML = matched.map(t => `
+    <span class="dock-pill" onclick="closeSearchModal();openTermPopup('${t.replace(/'/g, "\\'")}')">${esc(t)}</span>
+  `).join('') || '<div style="color:var(--sub);padding:12px">无匹配词条</div>';
+};
+
+window.openThemeModal = function() { document.getElementById('modal-theme').classList.add('active'); };
+window.closeThemeModal = function() { document.getElementById('modal-theme').classList.remove('active'); };
+window.setAppTheme = function(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('hanshuo_theme', t); } catch (e) {}
+  closeThemeModal();
+};
+window.setAppDark = function(d) {
+  document.documentElement.setAttribute('data-dark', d);
+  try { localStorage.setItem('hanshuo_dark', d); } catch (e) {}
+  closeThemeModal();
+};
+
+window.checkLocalLlmStatus = function() {
+  let msg = '方案 A 已激活：优先调用 TalkTree 原生端侧 llama.cpp + SQLite BM25 知识库';
+  try {
+    if (window.HanshuoNative && typeof window.HanshuoNative.getActiveEngineSummary === 'function') {
+      msg = window.HanshuoNative.getActiveEngineSummary();
+    }
+  } catch (e) {}
+  showToast(msg);
+};
+
+window.exitToTalkTree = function() {
+  if (window.HanshuoNative && typeof window.HanshuoNative.closeWorkbench === 'function') {
+    window.HanshuoNative.closeWorkbench();
+  } else {
+    window.history.back();
+  }
+};
+
+/* Android 物理返回键全栈协同处理：绝不卡死任何遮罩层 */
+window.onAndroidBackPressed = function() {
+  if (window.__SUFEI_STATE === 'OPEN' || window.__SUFEI_STATE === 'MORPHING') {
+    closeSufeiImmersiveDetail();
+    return true;
+  }
+  const activeModal = document.querySelector('.modal-mask.active');
+  if (activeModal) {
+    activeModal.classList.remove('active');
+    return true;
+  }
+  if (window.openWindows.length > 0) {
+    const topWin = window.openWindows[window.openWindows.length - 1];
+    if (topWin.isFullscreen) {
+      expandWindow(topWin.winId);
+    } else {
+      closeWindow(topWin.winId);
+    }
+    return true;
+  }
+  const activeSub = document.querySelector('.sub-page.active');
+  if (activeSub) {
+    activeSub.classList.remove('active');
+    return true;
+  }
+  if (currentTabIndex !== 0) {
+    switchTab(0);
+    return true;
+  }
+  exitToTalkTree();
+  return true;
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    const savedTheme = localStorage.getItem('hanshuo_theme') || 'vermilion';
+    const savedDark = localStorage.getItem('hanshuo_dark') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    document.documentElement.setAttribute('data-dark', savedDark);
+  } catch (e) {}
+
+  bindHeroCardSwipeIsolated();
+  rebuildActiveDatabase();
+  runRagTermExplain('音位');
+});
+</script>
+</body>
+</html>

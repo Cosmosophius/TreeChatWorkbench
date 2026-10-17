@@ -1,0 +1,184 @@
+/* =====================================================================
+ *  条畅 · Material 扩展
+ *  图标统一走 icons.js 里的官方 Material Symbols 矢量路径，
+ *  不再使用任何 emoji 作为功能图标。
+ * ===================================================================== */
+.mi {
+  display: inline-block;
+  vertical-align: -0.18em;
+  flex: 0 0 auto;
+  fill: currentColor;
+  pointer-events: none;
+}
+i[data-mi] { display: inline-flex; align-items: center; justify-content: center; }
+
+/* 按钮统一为 flex，图标与文字基线对齐 */
+.icon-btn, .foot-btn, .primary, .ghost, .bubble-btn, .ai-chip,
+.tab, .tab-btn, .mk-del, .book-del, .secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.icon-btn { gap: 0; }
+
+/* 触屏滑选时禁止浏览器自带的文本长按菜单干扰 */
+#book-view {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: none;
+}
+#book-view ::selection { background: rgba(46, 107, 94, .28); }
+
+/* 空状态图标 */
+.eh-emoji { color: var(--accent, #2E6B5E); opacity: .5; line-height: 1; }
+
+/* =====================================================================
+ *  Material 3 · 设计令牌与动效
+ *
+ *  说明：这里只在原有样式之上做「叠加」，不重写 style.css 的布局，
+ *  以免把已经调好的阅读排版弄乱。
+ *  动效曲线的取值按 Material 3 规范：
+ *    emphasized-decelerate  cubic-bezier(0.05, 0.7, 0.1, 1.0)
+ *    emphasized-accelerate  cubic-bezier(0.3, 0.0, 0.8, 0.15)
+ *    standard               cubic-bezier(0.2, 0.0, 0.0, 1.0)
+ *  时长：短 100ms / 中 200ms / 长 300ms（M3 的四档时长取了常用三档）。
+ * ===================================================================== */
+:root {
+  --md-sys-motion-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --md-sys-motion-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --md-sys-motion-standard: cubic-bezier(0.2, 0, 0, 1);
+  --md-sys-motion-dur-short: 100ms;
+  --md-sys-motion-dur-medium: 200ms;
+  --md-sys-motion-dur-long: 300ms;
+
+  --md-sys-shape-xs: 4px;
+  --md-sys-shape-sm: 8px;
+  --md-sys-shape-md: 12px;
+  --md-sys-shape-lg: 16px;
+  --md-sys-shape-full: 999px;
+
+  /* 状态层不透明度（M3：hover 8% / focus 10% / press 10% / drag 16%） */
+  --md-state-hover: 0.08;
+  --md-state-press: 0.10;
+}
+
+/* ---------- 状态层：可点击元素在按下时叠一层 currentColor ---------- */
+.icon-btn, .bubble-btn, .ai-chip, .tab, .mk-del, .book-del,
+.primary, .secondary, .ghost, .foot-btn, #opt-engine button {
+  position: relative;
+  overflow: hidden;
+  transition: background-color var(--md-sys-motion-dur-short) var(--md-sys-motion-standard),
+              box-shadow var(--md-sys-motion-dur-short) var(--md-sys-motion-standard),
+              transform var(--md-sys-motion-dur-short) var(--md-sys-motion-standard);
+}
+.icon-btn::after, .bubble-btn::after, .ai-chip::after,
+.primary::after, .secondary::after, .ghost::after,
+.foot-btn::after, #opt-engine button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--md-sys-motion-dur-short) var(--md-sys-motion-standard);
+}
+.icon-btn:active::after, .bubble-btn:active::after, .ai-chip:active::after,
+.primary:active::after, .secondary:active::after, .ghost:active::after,
+.foot-btn:active::after, #opt-engine button:active::after {
+  opacity: var(--md-state-press);
+}
+@media (hover: hover) {
+  .icon-btn:hover::after, .bubble-btn:hover::after, .ai-chip:hover::after,
+  .primary:hover::after, .secondary:hover::after, .ghost:hover::after,
+  .foot-btn:hover::after, #opt-engine button:hover::after {
+    opacity: var(--md-state-hover);
+  }
+}
+/* 按下瞬间轻微收缩，给出触觉般的反馈 */
+.icon-btn:active, .bubble-btn:active, .ai-chip:active,
+.primary:active, .secondary:active, .foot-btn:active {
+  transform: scale(0.97);
+}
+
+/* 最小触摸目标 48dp（M3 无障碍要求） */
+.icon-btn, .bubble-btn, .foot-btn { min-height: 44px; }
+.bubble-btn { min-width: 56px; }
+
+/* ---------- 屏幕切换：M3 的 fade-through（入场淡入上浮） ----------
+ * 注意：不能靠 .screen:not(.active) 的 transition 做退场 ——
+ * 原样式用 display:none/flex 切换，display 不参与过渡，写了也不会生效。
+ * 所以只做「入场」动效：.active 加上时元素刚变成可渲染，动画会跑一遍。
+ */
+@keyframes tt-screen-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.screen.active {
+  animation: tt-screen-in var(--md-sys-motion-dur-long) var(--md-sys-motion-emphasized-decelerate);
+}
+
+/* ---------- 设置面板 / 侧栏：自下而上滑入 ---------- */
+.sheet-inner {
+  transition: transform var(--md-sys-motion-dur-long) var(--md-sys-motion-emphasized-decelerate),
+              opacity var(--md-sys-motion-dur-medium) var(--md-sys-motion-standard);
+}
+.sheet:not(.on) .sheet-inner { transform: translateY(24px); opacity: 0; }
+.panel {
+  transition: transform var(--md-sys-motion-dur-long) var(--md-sys-motion-emphasized-decelerate);
+}
+
+/* ---------- 划词操作条：从选区处弹出 ---------- */
+.sel-bubble {
+  transition: opacity var(--md-sys-motion-dur-medium) var(--md-sys-motion-emphasized-decelerate),
+              transform var(--md-sys-motion-dur-medium) var(--md-sys-motion-emphasized-decelerate);
+  transform-origin: 50% 100%;
+  flex-wrap: wrap;
+  max-width: min(92vw, 520px);
+}
+/* 起始/结束都必须回到 .sel-bubble 的基础 transform: translate(-50%,-100%)，
+   否则动画结束后元素会跳一下（这是原样式里写死的关键帧位移，别省）。 */
+@keyframes tt-bubble-in {
+  from { opacity: 0; transform: translate(-50%, -94%) scale(0.94); }
+  to   { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+}
+.sel-bubble[style*="display: block"] {
+  animation: tt-bubble-in var(--md-sys-motion-dur-medium) var(--md-sys-motion-emphasized-decelerate);
+}
+/* 操作条按钮多了一倍（翻译/切分/例句/问AI/释义/复制），排布更紧凑些 */
+.sel-bubble .bubble-btn {
+  font-size: 12.5px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+/* ---------- 研读小窗消息进场 ---------- */
+.ai-msg {
+  animation: tt-msg-in var(--md-sys-motion-dur-medium) var(--md-sys-motion-emphasized-decelerate);
+}
+@keyframes tt-msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---------- 设置项的值显示（选词器那一行） ---------- */
+.opt-value {
+  font-size: 12.5px;
+  opacity: .78;
+  text-align: right;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ---------- 无障碍：用户要求减少动态效果时全部关掉 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .screen, .sheet-inner, .panel, .sel-bubble, .ai-msg,
+  .icon-btn, .bubble-btn, .ai-chip, .primary, .secondary, .ghost, .foot-btn {
+    transition: none !important;
+    animation: none !important;
+  }
+  .icon-btn:active, .bubble-btn:active, .ai-chip:active,
+  .primary:active, .secondary:active, .foot-btn:active {
+    transform: none;
+  }
+}

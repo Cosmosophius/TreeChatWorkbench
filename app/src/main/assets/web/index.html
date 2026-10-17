@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>条畅 · 原版书研读书库</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ 书架 ============ -->
+<div id="shelf" class="screen active">
+  <header class="bar">
+    <div class="brand">英语原版书阅读器</div>
+    <div class="bar-actions">
+      <button id="btn-marks-entry" class="icon-btn" title="收藏夹 (生词/句式)">★</button>
+      <button id="btn-settings" class="icon-btn" title="设置">⚙</button>
+    </div>
+  </header>
+
+  <div id="dropzone">
+    <div class="dz-inner">
+      <div class="dz-icon">＋</div>
+      <div class="dz-title">导入英文书</div>
+      <div class="dz-sub">支持 EPUB / PDF / MOBI / AZW3 / FB2 / DOCX / TXT<br>点击选择文件，或直接拖拽到此处</div>
+      <div class="import-actions">
+        <button id="btn-import" class="primary">选择普通书籍</button>
+        <button id="btn-import-ocr" class="secondary" title="支持拍照与纯图片扫描版 PDF">📷 扫描版 PDF (OCR识别)</button>
+      </div>
+      <input type="file" id="file-input" accept=".epub,.pdf,.txt,.md,.html,.mobi,.azw,.azw3,.prc,.fb2,.docx" hidden>
+      <input type="file" id="ocr-file-input" accept=".pdf,image/*" hidden>
+    </div>
+  </div>
+
+  <div class="shelf-meta">
+    <span id="shelf-stat">书架</span>
+    <span id="vocab-stat">词库加载中…</span>
+  </div>
+
+  <div id="book-list"></div>
+
+  <div id="shelf-empty" class="empty-hint">
+    <div class="eh-emoji">📚</div>
+    <p>书架还是空的</p>
+    <p class="eh-sub">导入一本英文原版书，自动标注六级中频以上生词难词</p>
+  </div>
+</div>
+
+<!-- ============ 阅读器 ============ -->
+<div id="reader" class="screen">
+  <header class="bar reader-bar">
+    <button id="btn-back" class="icon-btn">‹</button>
+    <div class="reader-title">
+      <span id="r-title">书名</span>
+      <span id="r-progress">0%</span>
+    </div>
+    <button id="btn-toc" class="icon-btn" title="目录">☰</button>
+    <button id="btn-etym-entry" class="icon-btn" title="三语历时音韵与全域词源全息视窗 (EtymoScope)" style="font-size:13px;width:auto;padding:0 8px">🏛️ 跨语词源</button>
+  </header>
+
+  <div id="progress-track"><div id="progress-fill"></div></div>
+
+  <div id="book-view" class="book-body"></div>
+
+  <footer class="reader-foot">
+    <button id="btn-prev" class="foot-btn">‹ 上一章</button>
+    <button id="btn-mode" class="foot-btn">仅生词</button>
+    <button id="btn-next" class="foot-btn">下一章 ›</button>
+  </footer>
+</div>
+
+<!-- ============ 侧边释义面板 ============ -->
+<div id="overlay" class="overlay"></div>
+<aside id="panel" class="panel">
+  <div class="panel-head">
+    <div class="panel-word-wrap">
+      <div id="p-word">word</div>
+      <div id="p-phonetic"></div>
+    </div>
+    <button id="btn-close-panel" class="icon-btn">✕</button>
+  </div>
+
+  <div class="panel-tags">
+    <span id="p-tier" class="tag"></span>
+    <span id="p-freq" class="tag ghost"></span>
+  </div>
+
+  <div class="panel-body">
+    <div style="margin-bottom:10px">
+      <button id="btn-panel-etym" class="primary small" style="width:100%;background:#5c3a21;border:none;padding:7px;border-radius:6px;font-size:12px;font-weight:600">🏛️ 查看三语历时拟音与全同义词源 (EtymoScope)</button>
+    </div>
+    <section class="sec">
+      <div class="sec-title">释义 <span class="sec-hint">内置词库</span></div>
+      <div id="p-def" class="def">—</div>
+    </section>
+
+    <section class="sec" id="sec-ctx">
+      <div class="sec-title">原文语境</div>
+      <div id="p-ctx" class="ctx"></div>
+    </section>
+
+    <section class="sec" id="sec-dict">
+      <div class="sec-title">在线词典 <span class="sec-hint">有道</span></div>
+      <div class="dict-actions">
+        <button id="btn-dict" class="primary small">在侧栏打开有道释义</button>
+        <button id="btn-dict-out" class="ghost small">外部浏览器</button>
+      </div>
+      <iframe id="dict-frame" class="dict-frame" referrerpolicy="no-referrer"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms"></iframe>
+      <div id="dict-note" class="dict-note"></div>
+    </section>
+  </div>
+
+  <div class="panel-foot">
+    <button id="btn-ai-word" class="primary wide btn-ai-action">💡 TalkTree 本地大模型语境精讲</button>
+    <button id="btn-star" class="ghost wide" style="margin-top:6px">☆ 收藏这个词</button>
+  </div>
+</aside>
+
+<!-- ============ 高级句式面板 ============ -->
+<aside id="sent-panel" class="panel">
+  <div class="panel-head">
+    <div class="panel-word-wrap">
+      <div id="s-level">长难句</div>
+      <div id="s-score"></div>
+    </div>
+    <button id="btn-close-sent" class="icon-btn">✕</button>
+  </div>
+  <div class="panel-body">
+    <section class="sec">
+      <div class="sec-title">原句</div>
+      <div id="s-text" class="sent-text"></div>
+    </section>
+    <section class="sec">
+      <div class="sec-title">句式结构</div>
+      <div id="s-feats" class="feats"></div>
+    </section>
+    <section class="sec">
+      <div class="sec-title">可复用高级句式模板</div>
+      <div id="s-template" class="template"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button id="btn-ai-sent" class="primary wide btn-ai-action">🧠 本地大模型深度剖析 & 例句</button>
+        <button id="btn-save-pattern" class="ghost wide">★ 收藏句式</button>
+      </div>
+    </section>
+  </div>
+</aside>
+
+<!-- ============ 收藏夹 ============ -->
+<div id="marks" class="screen">
+  <header class="bar">
+    <button id="btn-marks-back" class="icon-btn">‹</button>
+    <div class="brand">我的收藏</div>
+    <button id="btn-export" class="icon-btn" title="导出">⤓</button>
+  </header>
+  <div class="tabs">
+    <button class="tab active" data-tab="words">生词 <span id="c-words">0</span></button>
+    <button class="tab" data-tab="patterns">句式 <span id="c-patterns">0</span></button>
+  </div>
+  <div id="marks-body"></div>
+</div>
+
+<!-- ============ 设置 ============ -->
+<div id="settings" class="sheet">
+  <div class="sheet-inner">
+    <div class="sheet-title">阅读设置</div>
+    <div class="opt-row"><label>字号</label>
+      <input type="range" id="opt-font" min="15" max="30" value="19">
+      <span id="opt-font-v">19</span></div>
+    <div class="opt-row"><label>行距</label>
+      <input type="range" id="opt-lh" min="14" max="26" value="19">
+      <span id="opt-lh-v">1.9</span></div>
+    <div class="opt-row"><label>主题</label>
+      <div class="seg" id="opt-theme">
+        <button data-th="light" class="on">日间</button>
+        <button data-th="sepia">护眼</button>
+        <button data-th="dark">夜间</button>
+      </div>
+    </div>
+    <div class="opt-row"><label>考纲</label>
+      <div class="seg" id="opt-exam">
+        <button data-ex="cet6" class="on">六级</button>
+        <button data-ex="gre">GRE</button>
+        <button data-ex="ielts">雅思</button>
+        <button data-ex="toefl">托福</button>
+      </div>
+    </div>
+    <div class="opt-row"><label>拓展</label>
+      <div class="seg" id="opt-ext">
+        <button data-ext="0" class="on">不含超纲词</button>
+        <button data-ext="1">含超纲词</button>
+      </div>
+    </div>
+    <div class="opt-row"><label>难度</label>
+      <div class="seg" id="opt-tier">
+        <button data-tier="3" class="on">中频+</button>
+        <button data-tier="4">低频+</button>
+        <button data-tier="5">核心词</button>
+      </div>
+    </div>
+    <div class="opt-row"><label>离线模式</label>
+      <div class="seg" id="opt-offline">
+        <button data-off="0" class="on">关闭</button>
+        <button data-off="1">开启</button>
+      </div>
+    </div>
+    <div class="opt-hint" id="tier-hint">当前：六级 · 中频及以上（不联网，仅用内置释义）</div>
+    <button id="btn-settings-close" class="primary wide">完成</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<!-- ============ 划词浮动气泡 ============ -->
+<div id="selection-bubble" class="sel-bubble">
+  <button id="bubble-ask-ai" class="bubble-btn">💬 问 AI</button>
+  <button id="bubble-explain" class="bubble-btn">💡 释义</button>
+  <button id="bubble-etym" class="bubble-btn" style="background:#5c3a21;color:#fff">🏛️ 跨语词源·音标</button>
+  <button id="bubble-copy" class="bubble-btn">📋 复制</button>
+</div>
+
+<!-- ============ 悬浮 AI 对话小球 ============ -->
+<button id="fab-ai-chat" class="fab-ai" title="调起 TalkTree 树状研读小窗">
+  <span class="fab-icon">🤖</span>
+  <span class="fab-text">研读小窗</span>
+</button>
+
+<!-- ============ TalkTree 研读对话小窗 (半屏/抽屉/浮层) ============ -->
+<div id="ai-modal" class="ai-modal">
+  <div class="ai-modal-header">
+    <div class="ai-modal-title-wrap">
+      <div class="ai-modal-title">🌲 TalkTree 研读小窗</div>
+      <div id="ai-modal-book-tag" class="ai-modal-book-tag">当前书本</div>
+    </div>
+    <div class="ai-modal-controls">
+      <button id="btn-ai-clear" class="icon-btn small" title="清空对话">🗑</button>
+      <button id="btn-ai-min" class="icon-btn small" title="最小化">🗕</button>
+      <button id="btn-ai-close" class="icon-btn small" title="关闭">✕</button>
+    </div>
+  </div>
+
+  <div class="ai-modal-hint-archive">
+    <span>📌 会话自动归档至：</span><b id="ai-archive-root-name">📖 书籍专属 Root 对话树</b>
+  </div>
+
+  <!-- 消息容器 -->
+  <div id="ai-messages" class="ai-messages-view">
+    <div class="ai-msg ai-msg-assistant">
+      <div class="ai-msg-avatar">🌲</div>
+      <div class="ai-msg-content">
+        你好！我是 <b>TalkTree 研读助手</b>。你可以在阅读过程中随时划选段落、提问生词长难句。所有研读问答将自动归档在此书的专属 Root 节点下。
+      </div>
+    </div>
+  </div>
+
+  <!-- 快捷提示词标签栏 -->
+  <div class="ai-quick-prompts">
+    <button class="ai-chip" data-prompt="请详细剖析这句话的句法结构（主干、从句嵌套、非谓语动词）并给出学术写作仿写建议。">句法嵌套剖析</button>
+    <button class="ai-chip" data-prompt="请根据当前书本语境，解析核心生词的熟词生义、学术考点并给出2个地道学术考题级例句。">熟词生义与例句</button>
+    <button class="ai-chip" data-prompt="请用通俗易懂的中文概括提炼本章节/本段落的核心思想与修辞技巧。">段落主旨提炼</button>
+  </div>
+
+  <!-- 输入区 -->
+  <div class="ai-input-wrap">
+    <textarea id="ai-input-text" placeholder="输入提问，或直接点击上方快捷标签…" rows="1"></textarea>
+    <button id="btn-ai-send" class="primary">发送</button>
+  </div>
+</div>
+
+<!-- ============ 三语历时音韵与全同义词源全息视窗 (EtymoScope) ============ -->
+<div id="etym-modal" class="etym-modal">
+  <div class="etym-modal-header">
+    <div class="etym-modal-title-wrap">
+      <div class="etym-modal-title">🏛️ 跨语历时音韵与全同义词源 (EtymoScope)</div>
+      <div class="etym-speed-ctrl">
+        <span class="speed-label">离线发音倍速:</span>
+        <button class="btn-speed active" data-speed="1.0">1.0x</button>
+        <button class="btn-speed" data-speed="0.75">0.75x</button>
+        <button class="btn-speed" data-speed="0.5">0.5x</button>
+        <button class="btn-speed" data-speed="1.25">1.25x</button>
+      </div>
+    </div>
+    <div class="etym-modal-controls">
+      <button id="btn-etym-close" class="icon-btn small" title="关闭">✕</button>
+    </div>
+  </div>
+
+  <div class="etym-search-bar">
+    <input type="text" id="etym-input" placeholder="输入汉字（如 神圣/光/智）、俄语（святой/свет）或英语（holy/light）…" />
+    <button id="btn-etym-search" class="primary small">全息检索</button>
+  </div>
+
+  <div id="etym-content-view" class="etym-content-scroll">
+    <!-- 动态渲染三语卡片与多套拟音 -->
+  </div>
+</div>
+
+<script src="vocab2-data.js"></script>
+<script src="vocab_ru-data.js"></script>
+<script src="vocab.js"></script>
+<script src="cmn_phonology.js"></script>
+<script src="etym_eng_database.js"></script>
+<script src="etym_rus_database.js"></script>
+<script src="etym_cross_align.js"></script>
+<script src="ipa_audio_engine.js"></script>
+<script src="inflate.js"></script>
+<script src="epub.js"></script>
+<script src="reader.js"></script>
+</body>
+</html>

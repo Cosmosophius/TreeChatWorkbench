@@ -1,0 +1,27 @@
+# ---- 构建产物与缓存（全部可由 gradle 重生）----
+.gradle/
+.kotlin/
+app/build/
+*app/.cxx/
+.cxx/
+build/
+**/build/
+*.apk
+*.aab
+*.idsig
+
+# ---- 机器本地配置 ----
+local.properties
+.idea/
+*.iml
+*.DS_Store
+
+# ---- 运行日志与临时物 ----
+*.log
+captures/
+.android/
+__pycache__/
+
+# ---- 大型临时中转（正式发布包进 workspace/release/，不进仓库） ----
+_archive/
+downloads/

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  网络安全配置：允许明文 HTTP。
+
+  为什么必须放开（这不是可有可无的开关）：
+  targetSdk >= 28 时 Android 默认**禁止一切明文 HTTP 流量**。
+  而本项目最典型的用法恰恰是连本机/局域网的模型反代，例如
+  `http://localhost:8787`、`http://192.168.1.x:8000` —— 这些只能是 http。
+  不放开的话，请求在进入 OkHttp 之前就被系统拦掉，报错是：
+
+      CLEARTEXT communication to localhost not permitted by network security policy
+
+  这个错误**与 URL 拼写、密钥、协议选择全都无关**，用户去看那些地方会一直找不到原因。
+
+  安全上的取舍（有意为之，不是疏忽）：
+  这里放开的是全部域名的明文，而不是只列 localhost / 私网网段。原因是本项目支持
+  用户填**任意**中转站与自部署地址，而这些地址无法预先枚举；若只白名单私网，
+  用户一旦用公网 IP 的自建服务就会重新踩到同一个错误，而那种报错极难自查。
+  代价是"明文可被中间人读取"——对本地反代不构成新增风险（流量不出本机/局域网）。
+  如果将来要收紧，正确做法是让用户在设置里显式勾选"允许明文连接"，
+  而不是在清单里静态限制网段。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- IconPark (Apache-2.0) - Hardware/seal - https://github.com/bytedance/IconPark -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:pathData="M5 37C5 35.8954 5.89543 35 7 35H41C42.1046 35 43 35.8954 43 37V42C43 43.1046 42.1046 44 41 44H7C5.89543 44 5 43.1046 5 42V37Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        />
+    <path
+        android:pathData="M5 31C5 29.8954 5.89543 29 7 29H41C42.1046 29 43 29.8954 43 31V42C43 43.1046 42.1046 44 41 44H7C5.89543 44 5 43.1046 5 42V31Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        />
+    <path
+        android:pathData="M18.763 15.6637C18.9051 15.2657 19.2821 15 19.7047 15H28.2953C28.7179 15 29.0949 15.2657 29.237 15.6637L34 29H14L18.763 15.6637Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        />
+    <path
+        android:pathData="M20.4 4.0H27.6A5.4 5.4 0 0 1 33.0 9.4V9.4A5.4 5.4 0 0 1 27.6 14.8H20.4A5.4 5.4 0 0 1 15.0 9.4V9.4A5.4 5.4 0 0 1 20.4 4.0Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="4"
+        />
+</vector>
