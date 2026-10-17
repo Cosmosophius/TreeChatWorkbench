@@ -68,6 +68,9 @@ val platformBoundExcludes = listOf(
     "rag/PdfTextExtractor.kt",
     "etymology/engine/IpaAudioSynthesizer.kt",
     "data/reader/Speech.kt",        // 桌面替身已接管（say / espeak-ng / espeak）
+    "data/reader/CloudFolderStore.kt", // 桌面替身已接管（普通文件夹 + java.io.File，handoff 增量二）
+    // GoogleDriveClient.kt 是纯 SAF 改造后的死代码（零引用），handoff 明令不移植
+    "data/reader/GoogleDriveClient.kt",
     "ocr/OcrEngine.kt",
     "ocr/PdfOcr.kt",
     "ocr/PdfPageSource.kt",

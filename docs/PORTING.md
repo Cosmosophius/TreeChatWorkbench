@@ -146,3 +146,20 @@ M2 预备知识（给下个会话）：
 - **待办（M3 阶段二起）**：会话创建后的 ChatNodeViewModel 流接线实测（需真点击）；
   对话气泡 P6；命令面板接 CommandPaletteDialog；句对翻译窗（SentenceTranslateSheet 已编译，入口接侧栏）；
   linux-arm64 打包。
+
+### M3 阶段一点五：云盘桌面对面（v1.41.26 合并，2026-10-17 深夜）
+
+按 handoff「增量二」执行：
+
+- **`CloudFolderStore` 桌面替代**（共享 SAF 版排除）：普通文件夹 + java.io.File，同签名
+  （folderUri/hasFolder/setFolder/clear/listChildren/findByName/putFile/readFile/delete + CloudItem）。
+  语义映射：树 URI = `file://<目录>`；documentId = 文件绝对路径；
+  `takePersistableUriPermission` 充面为 no-op（文件夹即路径，无权限模型）。
+  书架云盘 UI（拖书上传/面板/导入书架/存文件/换文件夹）原样复用。
+- **非 OAuth**：GoogleDriveClient.kt 是纯 SAF 改造后的 zero-referer 死代码，
+  排出共享 include，不移植不复活（handoff 明令）。
+- **android.os.Environment 充面**：「存到 Download/条畅」走 `user.home/Download`。
+- **ActivityResultContracts.OpenDocumentTree** 合约 + 工作台总线分派：
+  目录选择走 javax.swing.JFileChooser（目录唯一模式），其它合约照旧 AWT FileDialog 多选模式。
+- **验证**：共享云盘 UI + 拖拽 + 批量条全量编译过；冒烟与安卓双 flavor 离线编译全绿。
+  拖拽跟手幽灵/真实上传需用户真点击（工作台有待接 UI 时与 shelf 一并测）。

@@ -34,6 +34,7 @@ open class Intent {
         const val EXTRA_STREAM = "android.intent.extra.STREAM"
         const val EXTRA_TEXT = "android.intent.extra.TEXT"
         const val FLAG_GRANT_READ_URI_PERMISSION = 1 shl 12
+        const val FLAG_GRANT_WRITE_URI_PERMISSION = 1 shl 13
 
         @JvmStatic
         fun createChooser(target: Intent?, title: String?): Intent = Intent(ACTION_CHOOSER)

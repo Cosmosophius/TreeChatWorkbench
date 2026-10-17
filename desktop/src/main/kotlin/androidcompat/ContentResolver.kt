@@ -2,10 +2,23 @@
 @file:Suppress("unused")
 package android.content
 
+import android.content.Intent
+
 class ContentResolver {
+    /** SAF 持久化权限在桌面为空操作（文件夹即文件系统路径，无权限模型）。 */
+    fun takePersistableUriPermission(uri: android.net.Uri?, modeFlags: Int) {}
+
+    fun releasePersistableUriPermission(uri: android.net.Uri?, modeFlags: Int) {}
+
     fun openInputStream(uri: android.net.Uri?): java.io.InputStream? = try {
         val file = uri?.toFile() ?: return null
         if (file.exists()) file.inputStream() else null
+    } catch (_: Exception) { null }
+
+    /** 桌面写文件（CloudFolderStore 走 java.io.File；这里兜底「wt」截断重写语义）。 */
+    fun openOutputStream(uri: android.net.Uri?, mode: String? = null): java.io.OutputStream? = try {
+        val file = uri?.toFile() ?: return null
+        file.outputStream()
     } catch (_: Exception) { null }
 
     fun query(

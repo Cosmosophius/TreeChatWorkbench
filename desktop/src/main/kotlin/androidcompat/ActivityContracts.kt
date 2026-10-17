@@ -18,6 +18,9 @@ object ActivityResultContracts {
     /** 打开多个文档（KnowledgeManagerDialog 批量导入）。 */
     class OpenMultipleDocuments : ActivityResultContract<Array<String>, List<Uri>>()
 
+    /** 选定一个可持久化授权的**目录**（云盘 SAF 桌面等价物：目录选择器）。 */
+    class OpenDocumentTree : ActivityResultContract<Uri?, Uri?>()
+
     /** 建新文档（后续里程碑）。 */
     class CreateDocument(val mimeTypes: Array<String> = emptyArray()) : ActivityResultContract<String, Uri?>()
 

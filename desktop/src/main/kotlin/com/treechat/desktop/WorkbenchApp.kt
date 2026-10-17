@@ -108,15 +108,35 @@ fun DesktopWorkbenchApp(
     val windowManager = remember { FloatingWindowManager() }
     val stateHolder = rememberSaveableStateHolder()
 
-    // 文件选择总线 → AWT FileDialog（SAF 桌面等价物）
+    // 文件/目录选择总线 → AWT FileDialog（SAF 桌面等价物）
     DisposableEffect(Unit) {
-        val hook: (Long, ActivityResultContract<*, *>, Any?) -> Unit = { id, _, _ ->
-            SwingUtilities.invokeLater {
-                val dialog = FileDialog(null as java.awt.Frame?, "选择文件", FileDialog.LOAD)
-                dialog.isMultipleMode = true
-                dialog.isVisible = true
-                val uris = dialog.files.map { android.net.Uri.fromFile(it) }
-                ActivityResultBus.complete(id, uris)
+        val hook: (Long, ActivityResultContract<*, *>, Any?) -> Unit = { id, contract, _ ->
+            when (contract) {
+                is ActivityResultContracts.OpenDocumentTree -> {
+                    SwingUtilities.invokeLater {
+                        val chooser = javax.swing.JFileChooser()
+                        chooser.dialogTitle = "选择云盘文件夹（桌面版 = 普通文件夹）"
+                        chooser.fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
+                        chooser.isMultiSelectionEnabled = false
+                        val chosen = if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
+                            chooser.selectedFile?.absolutePath?.let { path ->
+                                android.net.Uri.fromFile(java.io.File(path))
+                            }
+                        } else {
+                            null
+                        }
+                        ActivityResultBus.complete(id, chosen)
+                    }
+                }
+                else -> {
+                    SwingUtilities.invokeLater {
+                        val dialog = FileDialog(null as java.awt.Frame?, "选择文件", FileDialog.LOAD)
+                        dialog.isMultipleMode = true
+                        dialog.isVisible = true
+                        val uris = dialog.files.map { android.net.Uri.fromFile(it) }
+                        ActivityResultBus.complete(id, uris)
+                    }
+                }
             }
         }
         ActivityResultBus.pendingHook = hook
