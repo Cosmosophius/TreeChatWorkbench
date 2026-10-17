@@ -1312,6 +1312,30 @@ class ChatNodeViewModel(application: Application) : AndroidViewModel(application
      *
      * @param targetLanguage 目标语言的中文名（"中文"/"英文"/"俄文"），由界面给出。
      */
+    /**
+     * P5：**逐句对齐**翻译请求（一次性收完再解析，不流式）。
+     * 模型按契约返回 [{"src","dst"}]。任何失败（契约不遵/网络/未配置）都原样
+     * 抛出，由调用方回退到整段流式路径 —— 绝不返回空对伪装成功。
+     */
+    data class TranslationPair(val src: String, val dst: String)
+
+    suspend fun requestSentenceTranslationAligned(
+        sourceText: String,
+        targetName: String
+    ): List<TranslationPair> {
+        oneShotUnavailableReason()?.let { throw IllegalStateException(it) }
+        val raw = StringBuilder()
+        streamOneShotText(
+            systemPrompt = "你是翻译助手。严格只输出一个 JSON 数组，" +
+                "不要输出任何解释文字、不要用 Markdown 代码块包裹。",
+            userPrompt = "$TRANSLATE_ALIGNED_CONTRACT\n\n目标语言：$targetName\n\n待翻译文本：\n$sourceText"
+        ).collect { delta -> raw.append(delta) }
+        return when (val parsed = parseTranslationPairs(raw.toString())) {
+            is TranslationAlignResult.Parsed -> parsed.pairs
+            is TranslationAlignResult.Failed -> throw IllegalStateException(parsed.reason)
+        }
+    }
+
     fun streamSentenceTranslation(sourceText: String, targetLanguage: String): Flow<String> =
         streamOneShotText(
             systemPrompt = "你是专业翻译。只输出译文本身：不要解释、不要照抄原文、不要加引号、不要编号。",
@@ -2463,3 +2487,64 @@ private val SYNTAX_JSON_CONTRACT: String = """
 
 /** 文献/网页对话树的来源标记前缀（与 sourceOrigin 同源，用于查重）。 */
 private const val SOURCE_ORIGIN_LITERATURE_PREFIX = "来自文献·"
+
+/** P5 逐句对齐翻译的 JSON 契约。 */
+private val TRANSLATE_ALIGNED_CONTRACT: String = """
+请把上面的待翻译文本**按句子切分并逐句翻译**，返回一个 JSON 数组。
+要求：
+1. 只输出一个 JSON 数组，数组之外不要有任何字符。
+2. 每个元素形如 {"src": "原句", "dst": "译文"}。
+3. src 必须**逐字照抄**原文的对应句子（含标点，不要合并、不要改写）。
+4. dst 是 src 对应的**目标语言译文**，与 src 一一对应、顺序一致。
+5. 覆盖原文全部句子；无法划分句子时宁可整段一条，也不要丢句。
+
+示例：
+[{"src":"The rain fell.","dst":"雨落了下来。"},{"src":"We stayed in.","dst":"我们待在了屋里。"}]
+""".trimIndent()
+
+/** 逐句对齐解析结果：Parsed 才是可信的。 */
+internal sealed interface TranslationAlignResult {
+    data class Parsed(val pairs: List<ChatNodeViewModel.TranslationPair>) : TranslationAlignResult
+    data class Failed(val reason: String) : TranslationAlignResult
+}
+
+/** 取最外层 JSON 数组（剥代码围栏）；与句法解析同一防御面。 */
+private fun extractTranslateArray(text: String): String? {
+    var body = text.trim()
+    if (body.startsWith("```")) {
+        body = body.removePrefix("```").trimStart()
+        val nl = body.indexOf('\n')
+        if (nl >= 0 && nl < 12) body = body.substring(nl + 1)
+        val fenceEnd = body.lastIndexOf("```")
+        if (fenceEnd >= 0) body = body.substring(0, fenceEnd)
+    }
+    val start = body.indexOf('[')
+    val end = body.lastIndexOf(']')
+    if (start < 0 || end <= start) return null
+    return body.substring(start, end + 1)
+}
+
+internal fun parseTranslationPairs(raw: String): TranslationAlignResult {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return TranslationAlignResult.Failed("模型没有返回任何内容")
+    val body = extractTranslateArray(trimmed)
+        ?: return TranslationAlignResult.Failed("模型输出里找不到 JSON 数组")
+    val array = try {
+        org.json.JSONArray(body)
+    } catch (e: Exception) {
+        return TranslationAlignResult.Failed("JSON 解析失败：${e.message ?: "格式不合法"}")
+    }
+    if (array.length() == 0) return TranslationAlignResult.Failed("数组为空，没有切出任何句对")
+    val pairs = ArrayList<ChatNodeViewModel.TranslationPair>(array.length())
+    for (i in 0 until array.length()) {
+        val obj = array.optJSONObject(i)
+            ?: return TranslationAlignResult.Failed("第 ${i + 1} 个元素不是 JSON 对象")
+        val src = obj.optString("src").trim()
+        val dst = obj.optString("dst").trim()
+        if (src.isEmpty() || dst.isEmpty()) {
+            return TranslationAlignResult.Failed("第 ${i + 1} 句的 src/dst 为空")
+        }
+        pairs.add(ChatNodeViewModel.TranslationPair(src, dst))
+    }
+    return TranslationAlignResult.Parsed(pairs)
+}

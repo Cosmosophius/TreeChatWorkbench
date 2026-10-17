@@ -95,6 +95,14 @@ fun SentenceTranslationWindowContent(
     var running by remember(sourceText) { mutableStateOf(false) }
     var attempt by remember(sourceText) { mutableIntStateOf(0) }
     var copied by remember(sourceText) { mutableStateOf(false) }
+
+    /**
+     * 对齐后的句对；非 null = 逐句对照模式（P5）。
+     * null 且无误 = 正在请求；请求失败自动回退整段流式（output/Error 路径不变）。
+     */
+    var aligned by remember(sourceText) {
+        mutableStateOf<List<ChatNodeViewModel.TranslationPair>?>(null)
+    }
     var followUp by remember(sourceText) { mutableStateOf("") }
 
     val provider = viewModel.activeProvider
@@ -104,14 +112,27 @@ fun SentenceTranslationWindowContent(
         output = ""
         error = null
         copied = false
+        aligned = null
         running = true
+        // P5：先走**逐句对齐**（不流式，收完解析）；契约不遵/网络失败 →
+        // 自动回退旧的整段流式路径。两条路都诚实暴露失败，不伪装成功。
         try {
-            viewModel.streamSentenceTranslation(sourceText, target.displayName)
-                .collect { delta -> output += delta }
+            val pairs = viewModel.requestSentenceTranslationAligned(
+                sourceText, target.displayName
+            )
+            aligned = pairs
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            error = e.localizedMessage ?: "翻译失败"
+            aligned = null
+            try {
+                viewModel.streamSentenceTranslation(sourceText, target.displayName)
+                    .collect { delta -> output += delta }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                error = t.localizedMessage ?: "翻译失败"
+            }
         }
         running = false
     }
@@ -172,7 +193,7 @@ fun SentenceTranslationWindowContent(
         )
         Spacer(modifier = Modifier.height(2.dp))
 
-        if (running && output.isEmpty()) {
+        if (running && output.isEmpty() && aligned == null) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             Spacer(modifier = Modifier.height(6.dp))
         }
@@ -183,13 +204,36 @@ fun SentenceTranslationWindowContent(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
         ) {
-            if (output.isNotEmpty()) {
+            if (aligned != null) {
+                // ---- P5 逐句对照：原句浅灰小字在上，译文正文在下，细线分隔 ----
+                aligned!!.forEachIndexed { i, pair ->
+                    if (i > 0) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        androidx.compose.material3.HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = scheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
+                    Text(
+                        text = pair.src,
+                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 17.sp),
+                        color = scheme.onSurfaceVariant.copy(alpha = 0.75f)
+                    )
+                    Text(
+                        text = pair.dst,
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                        color = scheme.onSurface,
+                        modifier = Modifier.padding(top = 1.dp)
+                    )
+                }
+            } else if (output.isNotEmpty()) {
                 Text(
                     text = output + if (running) " …" else "",
                     style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
                     color = scheme.onSurface
                 )
-            } else if (error == null) {
+            } else if (aligned == null && error == null) {
                 Text(
                     text = "正在翻译…",
                     style = MaterialTheme.typography.bodySmall,
@@ -261,9 +305,13 @@ fun SentenceTranslationWindowContent(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(
-                enabled = output.isNotEmpty(),
+                enabled = output.isNotEmpty() || aligned != null,
                 onClick = {
-                    clipboard.setText(AnnotatedString(output))
+                    clipboard.setText(
+                        AnnotatedString(
+                            aligned?.joinToString("\n\n") { it.src + "\n" + it.dst } ?: output
+                        )
+                    )
                     copied = true
                 }
             ) {
