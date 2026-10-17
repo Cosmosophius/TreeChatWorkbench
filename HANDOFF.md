@@ -245,3 +245,39 @@ cp app/build/outputs/apk/lite/release/app-lite-release.apk $OUT/talktree-lite-<�
 - 版本口径：`versionName` 全平台同源共进，`versionCode` 仅安卓。桌面里程碑用 `1.4x.0-desktop.N` 预览尾缀，达到门槛并入正式号。
 - 交付目录：安卓仍进 workspace/release/（talktree-full/-lite-<ver>.apk）；桌面进 workspace/release/desktop/（talktree-<os>-arm64-<ver>.<ext>）。
 - 合并节奏：desktop-port 每完成一个稳定阶段回合并 master，合并必验：安卓双 flavor 编译 + 桌面目标编译。
+
+## 安卓线增量（2026-10-17 晚，桌面移植会话合并前必读）
+
+安卓发版线已推进到 **v1.41.24（versionCode 76）**，v1.41.19 以来共 6 个提交
+（`git log --oneline` 可见，全部只动安卓侧与共享 UI 层）。对移植方要点：
+
+### 1. 共享 UI 层的新架构件（common 友好，桌面上来就有）
+- **多色源标记通道**：`HighlightProjection.SourceMark(start, endExclusive, color)` +
+  `projectSourceMarks()`；`SelectableMarkdownText(sourceMarks=...)`、`SelectableBlock(markGroups=...)`、
+  `toAnnotated(markGroups=...)`。生词/页内查找/当前命中共用一条管线 ——
+  桌面端任何"给正文叠色"的需求**不要再加新参数**，加 SourceMark 即可。
+- **侧边栏**（`ui/reader/ReaderSidePanel.kt`）：生词/词条/**句法**/AI/注释 五页签，
+  可拖宽、可完全收起（`ReaderPanelState`，SharedPreferences）。
+  句法标注 GUI（`SyntaxSentenceCard`：点树行↔原句片段双向聚焦）**只活在侧栏**，
+  正文页与 OCR 页都不再画卡 —— 别把它搬回原文。
+- **词条结构化**：`VocabIndex.EnEntry` 新增 `tags`/`levels`（vocab2 成对列）；
+  义项分组用 `GlossParser`；发音走 `data/reader/Speech.kt` 的 **Speaker 接口**
+  （Android 实现已给；桌面端请补 `say`/espeak 实现，签名一致即可，UI 不用动）。
+- **翻译对齐**：`ChatNodeViewModel.requestSentenceTranslationAligned()` +
+  `TRANSLATE_ALIGNED_CONTRACT`（严格 JSON 句对）；失败自动回退整段流式。
+  -- P5 UI 在 `SentenceTranslateSheet.kt`。
+- **链接悬停预览**：`SelectableBlock` else 分支（Compose UI 1.6.8 无
+  `PointerEventType.Hover`，用 Enter/Move+Exit 等价——升级 1.7 后可换 Hover）。
+
+### 2. 已移除的（别"补回来"）
+正文/OCR 工具条的「划线」「笔记」按钮、侧栏「打开白板」按钮 —— 用户明确移除；
+读书笔记采集只剩手写批注层，旧划线数据仍在侧栏「注释」页可看。
+
+### 3. 修过的接线错误（桌面端容易踩同坑）
+`AdaptiveDocumentView` 里 self-document 的调用点参数（activeExamTokens/onPageText/
+toolState/...）曾整批错插进 **LiveTextPageCard** 的调用——两处调用点形似，
+带默认值的新参数漏插不报错。给双卡片加参数时：**先 grep 两处调用点逐一核对**。
+
+### 4. 待办归属
+`docs/REDESIGN.md` 的 P6（对话气泡桌面快捷动作）留给下一批 ——
+对话层正被桌面 M2 触碰，本轮刻意避开。
