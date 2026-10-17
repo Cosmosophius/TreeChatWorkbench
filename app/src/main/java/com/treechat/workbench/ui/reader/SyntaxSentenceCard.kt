@@ -1,6 +1,9 @@
 package com.treechat.workbench.ui.reader
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
@@ -24,13 +28,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -38,59 +48,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 阅读器的句法标注卡（考研 AI 式呈现，内核是**我们的大模型切分**）。
+ * 阅读器的句法标注卡（大模型切分内核 + 全新交互呈现）。
  *
- * 参考软件是"规则分析"画一级近似、再由「神经网络句法」开关换精确结果；
- * 用户明确：它的启发式做得烂，**换成现有的自动选句 + 大模型切割**，
- * 但卡片样式照它做。因此这里只有一条数据源 ——
- * [SentenceToolState.units]（模型返回的 text / level / role，严格 JSON）。
+ * ## 为什么不用参考软件那种"树一摊、句一摊"的画法
  *
- * 卡片结构（与参考截图一致）：
- *   [标签链]  超长难句 / 长难句 · 从句 N · 嵌套 M 层
- *   [句子主干]  level=0 的单元
- *   [从句层次]  按定位顺序缩进成树
- *   [原句成分标注]  把各单元**叠加回原句**：角色配色 + 底衬 + 下划线
- *   [图例]  出现过的角色与颜色
- *   [本段操作]  翻译本段 / 复制本段 / 收起本段注释
+ * 参考软件（考研 AI）把「从句层次树」和「原句成分标注」画成两个各自独立的视图：
+ * 看树时不知道每个从句压着原句哪几个字，看原句时颜色对不上图例要来回扫。
+ * 中间的**对应关系全靠脑补** —— 这是最不直观的一环。
+ *
+ * 这里改成**点哪联哪**的单卡交互：
+ *   · 点树的某一行 → 原句里该单元的片段点亮，其余全部压暗；
+ *   · 点原句的某个片段 → 对应的树行浮起（描边 + 提亮），其余行褪色；
+ *   · 点图例色点 → 跳到该角色的第一个单元；再点同一处 = 取消聚焦。
+ * 结构与原文的映射由交互直接给出，不再需要心算。
+ *
+ * ## 数据契约（不变）
+ * 内核仍是 [SentenceToolState.units]：模型返回的扁平数组
+ * `{text(逐字原文), level(0=主句,1=直接嵌套…), role(中文角色)}`，
+ * 由 [locateUnits] 按顺序锚回原文下标 —— 层级 + 锚点 = 树。
+ * 严格解析：任何字段不合规整份失败；对不回原文的片段照实计数（不伪造位置）。
  */
-
-/** 角色名 → 颜色。模型输出的 role 是自由文本，按关键词取色；认不出走中性色。 */
-internal fun syntaxRoleColor(
-    role: String,
-    scheme: androidx.compose.material3.ColorScheme
-): Color {
-    val r = role.trim()
-    return when {
-        r.contains("主语") -> scheme.primary
-        r.contains("谓语") -> scheme.error
-        r.contains("宾语") -> Color(0xFF43A047)
-        r.contains("定语") -> Color(0xFF8D6E63)
-        r.contains("状语") -> Color(0xFF00ACC1)
-        r.contains("补语") -> Color(0xFFF57C00)
-        r.contains("从句") -> Color(0xFF795548)
-        r.contains("并列") || r.contains("连接") -> scheme.secondary
-        else -> scheme.onSurfaceVariant
-    }
-}
-
-/** 标签链：句长决定难句级，从句数与最深嵌套由单元算。 */
-internal data class SyntaxCardTags(
-    val difficulty: String,
-    val clauseCount: Int,
-    val depth: Int
-)
-
-internal fun buildSyntaxCardTags(source: String, units: List<SyntaxUnit>): SyntaxCardTags {
-    val clauseCount = units.count { it.level >= 1 }
-    val depth = units.maxOfOrNull { it.level } ?: 0
-    val difficulty = when {
-        source.length > 90 -> "超长难句"
-        source.length > 40 -> "长难句"
-        else -> "难句"
-    }
-    return SyntaxCardTags(difficulty, clauseCount, depth)
-}
-
 @Composable
 fun SyntaxSentenceCard(
     /** 被分析的整句原文。 */
@@ -111,11 +88,10 @@ fun SyntaxSentenceCard(
     Surface(
         color = scheme.surfaceContainerHigh,
         tonalElevation = 1.dp,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
-            val bodyReady = !analyzing && failureReason == null && units.isNotEmpty()
             when {
                 analyzing -> {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -136,10 +112,19 @@ fun SyntaxSentenceCard(
                 }
 
                 units.isEmpty() -> {
-                    // 无任何可画内容：保持空，仅留操作行
+                    // 无可画内容：仅保留操作行
                 }
 
                 else -> {
+                    val located = remember(sourceSentence, units) {
+                        locateUnits(sourceSentence, units)
+                    }.first
+                    /** 当前聚焦的单元（located 列表下标；null = 不聚焦）。 */
+                    var focus by remember(sourceSentence, units) {
+                        androidx.compose.runtime.mutableStateOf<Int?>(null)
+                    }
+                    val focused: Int? = focus
+
                     val tags = remember(sourceSentence, units) {
                         buildSyntaxCardTags(sourceSentence, units)
                     }
@@ -151,116 +136,78 @@ fun SyntaxSentenceCard(
                         AssistChip(onClick = {}, label = { Text("嵌套 ${tags.depth} 层", fontSize = 11.sp) })
                     }
 
-                    // ---- 句子主干（level=0）----
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "句子主干",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = scheme.onSurfaceVariant
-                    )
-                    // 主干 = 主语+谓语+宾语（成分级 units），没有成分级时退回整句
-                    val trunk = units.filter { it.level == 0 && it.role.any { k -> k in "主谓宾" } }
-                        .joinToString(" ") { it.text }
-                        .ifBlank { units.firstOrNull { it.level == 0 }?.text ?: sourceSentence }
-                    Text(
-                        text = trunk,
-                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
-                        color = scheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    // ---- 从句层次（树：缩进 = level）----
-                    val nested = locateUnits(sourceSentence, units)
-                        .first
-                        .filter { it.unit.level >= 1 }
-                    if (nested.isNotEmpty()) {
+                    // ---- 句子骨架：主语+谓语+宾语，逐成分着色 ----
+                    val trunkUnits = located.withIndex().filter { it.value.unit.level == 0 }
+                    if (trunkUnits.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "从句层次",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = scheme.onSurfaceVariant
-                        )
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            nested.forEach { item ->
-                                val clause = item.unit.text
-                                val cut = clause.indexOfFirst { it == ' ' }
-                                val lead = if (cut > 0) clause.substring(0, cut) else clause
-                                val rest = if (cut > 0) clause.substring(cut) else ""
-                                // 树行 = 缩进(level) + └ + 引导词(角色色/加粗) + 其余(正文色)
-                                // 与参考截图一致：色词本身就是"角色标签"，不再另写 role 文案
-                                Row(
-                                    modifier = Modifier.padding(
-                                        start = ((item.unit.level.coerceAtLeast(1) - 1) * 14).dp
-                                    )
-                                ) {
-                                    Text(
-                                        text = "└ ",
-                                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
-                                        color = scheme.onSurfaceVariant
-                                    )
-                                    Text(
-                                        text = lead,
-                                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = syntaxRoleColor(item.unit.role, scheme)
-                                    )
-                                    if (rest.isNotEmpty()) {
-                                        Text(
-                                            text = rest,
-                                            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
-                                            color = scheme.onSurface
-                                        )
+                        Row(verticalAlignment = Alignment.Top) {
+                            CardSectionLabel("主干")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = buildAnnotatedString {
+                                    trunkUnits.forEachIndexed { order, (idx, item) ->
+                                        val color = syntaxRoleColor(item.unit.role, scheme)
+                                        if (order > 0) append("  ")
+                                        withStyle(SpanStyle(color = color, fontWeight = FontWeight.SemiBold)) {
+                                            append(item.unit.text)
+                                        }
                                     }
+                                },
+                                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
+                                color = scheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    // ---- 原句成分标注：可点，聚焦时其余压暗 ----
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.Top) {
+                        CardSectionLabel("原句")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        SyntaxInteractiveSentence(
+                            source = sourceSentence,
+                            located = located,
+                            focus = focused,
+                            onFocusChange = { focus = it }
+                        )
+                    }
+
+                    // ---- 结构树：行卡式，点行聚焦；聚焦行描边提亮 ----
+                    val tree = located.withIndex().filter { it.value.unit.level >= 1 }
+                    if (tree.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.Top) {
+                            CardSectionLabel("结构")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                tree.forEach { (idx, item) ->
+                                    SyntaxTreeRow(
+                                        unit = item.unit,
+                                        isFocused = focused == idx,
+                                        isDimmed = focused != null && focused != idx,
+                                        onClick = { focus = if (focused == idx) null else idx }
+                                    )
                                 }
                             }
                         }
                     }
 
-                    // ---- 原句成分标注（叠加回整句）----
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "原句成分标注 · 模型切分",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = scheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    val annotated = remember(sourceSentence, units) {
-                        val spans = locateUnits(sourceSentence, units).first
-                        buildAnnotatedString {
-                            append(sourceSentence)
-                            spans.sortedBy { it.start }.forEach { item ->
-                                val color = syntaxRoleColor(item.unit.role, scheme)
-                                addStyle(
-                                    SpanStyle(
-                                        color = color,
-                                        background = color.copy(alpha = 0.16f),
-                                        textDecoration = TextDecoration.Underline
-                                    ),
-                                    item.start,
-                                    minOf(item.end, sourceSentence.length)
-                                )
-                            }
-                        }
-                    }
-                    Text(
-                        text = annotated,
-                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                        color = scheme.onSurface
-                    )
-
-                    // ---- 图例 ----
+                    // ---- 图例：点色点跳到该角色第一个单元 ----
                     val roles = units.map { it.role }.distinct()
-                    if (roles.isNotEmpty()) {
+                    if (roles.size > 1) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
-                            horizontalArrangement =
-                                Arrangement.spacedBy(10.dp, Alignment.Start)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.Start)
                         ) {
                             roles.forEach { role ->
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable {
+                                        focus = if (focus != null) null
+                                        else located.indexOfFirst { it.unit.role == role }
+                                    }
+                                ) {
                                     Box(
                                         modifier = Modifier
                                             .size(9.dp)
@@ -303,7 +250,7 @@ fun SyntaxSentenceCard(
                     Text("翻译本段", fontSize = 12.sp)
                 }
                 TextButton(onClick = {
-                    if (bodyReady) clipboard.setText(AnnotatedString(sourceSentence))
+                    if (units.isNotEmpty()) clipboard.setText(AnnotatedString(sourceSentence))
                 }) {
                     Icon(
                         imageVector = Icons.Outlined.ContentCopy,
@@ -325,4 +272,188 @@ fun SyntaxSentenceCard(
             }
         }
     }
+}
+
+/** 卡片分区的小标签（主干 / 原句 / 结构），竖排贴齐首行。 */
+@Composable
+private fun CardSectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 3.dp)
+    )
+}
+
+/**
+ * 可点的整句标注：聚焦单元高亮、其余压暗；点片段切换聚焦。
+ */
+@Composable
+private fun SyntaxInteractiveSentence(
+    source: String,
+    located: List<LocatedUnit>,
+    focus: Int?,
+    onFocusChange: (Int?) -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    var layout by remember { androidx.compose.runtime.mutableStateOf<TextLayoutResult?>(null) }
+
+    val annotated = remember(source, located, focus) {
+        buildAnnotatedString {
+            append(source)
+            located.forEachIndexed { idx, item ->
+                val base = syntaxRoleColor(item.unit.role, scheme)
+                when {
+                    focus == null -> addStyle(
+                        SpanStyle(
+                            color = base,
+                            background = base.copy(alpha = 0.14f),
+                            textDecoration = TextDecoration.Underline
+                        ),
+                        item.start, minOf(item.end, source.length)
+                    )
+                    focus == idx -> addStyle(
+                        SpanStyle(
+                            color = base,
+                            background = base.copy(alpha = 0.42f),
+                            fontWeight = FontWeight.SemiBold,
+                            textDecoration = TextDecoration.Underline
+                        ),
+                        item.start, minOf(item.end, source.length)
+                    )
+                    else -> addStyle(
+                        // 非聚焦的压暗：结构一眼可读的关键
+                        SpanStyle(color = scheme.onSurface.copy(alpha = 0.32f)),
+                        item.start, minOf(item.end, source.length)
+                    )
+                }
+            }
+        }
+    }
+
+    Text(
+        text = annotated,
+        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+        color = scheme.onSurface,
+        onTextLayout = { layout = it },
+        modifier = Modifier
+            .pointerInput(located) {
+                detectTapGestures { pos ->
+                    val l = layout ?: return@detectTapGestures
+                    val offset = l.getOffsetForPosition(pos)
+                    val hit = located.indexOfFirst {
+                        offset >= it.start && offset < it.end
+                    }
+                    onFocusChange(if (hit >= 0) hit else null)
+                }
+            }
+    )
+}
+
+/**
+ * 结构树的一行：左层级竖线 + 深度底色 + 引导词着色 + 右端角色签。
+ */
+@Composable
+private fun SyntaxTreeRow(
+    unit: SyntaxUnit,
+    isFocused: Boolean,
+    isDimmed: Boolean,
+    onClick: () -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val hue = syntaxRoleColor(unit.role, scheme)
+    val depth = unit.level.coerceAtLeast(1) - 1
+    val bg by animateColorAsState(
+        when {
+            isFocused -> hue.copy(alpha = 0.26f)
+            isDimmed -> hue.copy(alpha = 0.05f)
+            else -> hue.copy(alpha = 0.13f - depth * 0.02f)
+        },
+        label = "syntaxRowBg"
+    )
+
+    val clause = unit.text
+    val cut = clause.indexOfFirst { it == ' ' }
+    val lead = if (cut > 0) clause.substring(0, cut) else clause
+    val rest = if (cut > 0) clause.substring(cut) else ""
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = (depth * 14).dp, top = 1.dp, bottom = 1.dp)
+            .background(bg, RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(start = 2.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(18.dp)
+                .background(hue, RoundedCornerShape(1.5.dp))
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = lead,
+            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
+            fontWeight = FontWeight.SemiBold,
+            color = if (isDimmed) hue.copy(alpha = 0.45f) else hue
+        )
+        if (rest.isNotEmpty()) {
+            Text(
+                text = rest,
+                style = MaterialTheme.typography.bodySmall.copy(lineHeight = 19.sp),
+                color = scheme.onSurface.copy(alpha = if (isDimmed) 0.4f else 0.85f),
+                maxLines = 2,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+        } else {
+            Spacer(modifier = Modifier.weight(1f))
+        }
+        Text(
+            text = unit.role,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isDimmed) hue.copy(alpha = 0.45f) else hue,
+            modifier = Modifier.padding(start = 6.dp, end = 4.dp)
+        )
+    }
+}
+
+
+/** 角色名 → 颜色。模型输出的 role 是自由文本，按关键词取色；认不出走中性色。 */
+internal fun syntaxRoleColor(
+    role: String,
+    scheme: androidx.compose.material3.ColorScheme
+): Color {
+    val r = role.trim()
+    return when {
+        r.contains("主语") -> scheme.primary
+        r.contains("谓语") -> scheme.error
+        r.contains("宾语") -> Color(0xFF43A047)
+        r.contains("定语") -> Color(0xFF8D6E63)
+        r.contains("状语") -> Color(0xFF00ACC1)
+        r.contains("补语") -> Color(0xFFF57C00)
+        r.contains("从句") -> Color(0xFF795548)
+        r.contains("并列") || r.contains("连接") -> scheme.secondary
+        else -> scheme.onSurfaceVariant
+    }
+}
+
+/** 标签链：句长决定难句级，从句数与最深嵌套由单元算。 */
+internal data class SyntaxCardTags(
+    val difficulty: String,
+    val clauseCount: Int,
+    val depth: Int
+)
+
+internal fun buildSyntaxCardTags(source: String, units: List<SyntaxUnit>): SyntaxCardTags {
+    val clauseCount = units.count { it.level >= 1 }
+    val depth = units.maxOfOrNull { it.level } ?: 0
+    val difficulty = when {
+        source.length > 90 -> "超长难句"
+        source.length > 40 -> "长难句"
+        else -> "难句"
+    }
+    return SyntaxCardTags(difficulty, clauseCount, depth)
 }
