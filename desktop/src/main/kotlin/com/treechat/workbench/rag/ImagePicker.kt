@@ -1,6 +1,10 @@
-// 桌面替身：rag.ImagePicker（AiStreamClient 只用 splitDataUri/MAX_IMAGES）。
+// 桌面替身：rag.ImagePicker（AiStreamClient 只用 splitDataUri/MAX_IMAGES；
+// NodeChatContent 的附件选取加 toDataUri）。
 @file:Suppress("unused", "MemberVisibilityCanBePrivate")
 package com.treechat.workbench.rag
+
+import android.content.Context
+import android.net.Uri
 
 object ImagePicker {
     const val MAX_IMAGES = 4
@@ -17,6 +21,17 @@ object ImagePicker {
         return mediaType to payload
     }
 
-    fun toDataUri(bytes: ByteArray, mediaType: String = "image/jpeg"): String =
-        "data:$mediaType;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+    /** 桌面版：文件直接读字节。 */
+    fun toDataUri(context: Context, uri: Uri): String {
+        val file = uri.toFile()
+        val bytes = file.readBytes()
+        val type = when (file.extension.lowercase()) {
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            else -> "image/jpeg"
+        }
+        return "data:$type;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+    }
 }
+

@@ -21,13 +21,15 @@ object CoverExtractor {
     fun deleteCache(context: Context, documentId: String) {
         runCatching { File(coverDir(context), "$documentId.jpg").delete() }
     }
+}
 
-    class ReaderCoverPrefs(context: Context) {
-        var disableCrop: Boolean = context.getSharedPreferences("treechat_settings", Context.MODE_PRIVATE)
-            .getBoolean("reader_disable_cover_crop", false)
-        var pdfCoverEnabled: Boolean = context.getSharedPreferences("treechat_settings", Context.MODE_PRIVATE)
-            .getBoolean("reader_pdf_cover_enabled", false)
-    }
+/** 封面偏好（桌面版：Properties 落盘，与安卓 keys 一致）。 */
+class ReaderCoverPrefs(context: Context) {
+    var disableCrop: Boolean = context.getSharedPreferences("treechat_settings", Context.MODE_PRIVATE)
+        .getBoolean("reader_disable_cover_crop", false)
+    var pdfCoverEnabled: Boolean = context.getSharedPreferences("treechat_settings", Context.MODE_PRIVATE)
+        .getBoolean("reader_pdf_cover_enabled", false)
+}
 
     suspend fun extract(context: Context, doc: ReaderDocument, allowPdfCover: Boolean): File? =
         withContext(Dispatchers.IO) {

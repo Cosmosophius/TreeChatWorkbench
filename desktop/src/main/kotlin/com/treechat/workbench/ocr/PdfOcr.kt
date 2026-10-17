@@ -13,9 +13,12 @@ object PdfOcr {
     /** 安卓侧按屏密度给渲染倍率；桌面固定 2f。 */
     fun resolveRenderScale(context: Context): Float = 2f
 
-    /** 整本 OCR 充面：走 PDFBox 文字层（com.treechat.workbench.rag.PdfTextExtractor）。 */
-    suspend fun extractText(context: Context, bytes: ByteArray): String =
-        com.treechat.workbench.rag.PdfTextExtractor.extractTextLayer(bytes) ?: ""
+    /** 整本 OCR 充面：走 PDFBox 文字层（签名带进度回调，对齐安卓）。 */
+    suspend fun extractText(
+        context: Context,
+        bytes: ByteArray,
+        onProgress: PdfOcr.ProgressListener? = null,
+    ): String = com.treechat.workbench.rag.PdfTextExtractor.extractTextLayer(bytes) ?: ""
 
     /** 单页文本充面：PDFBox 按页抽取。 */
     suspend fun extractSinglePageText(filePath: String, pageIndex1Based: Int): String? = try {

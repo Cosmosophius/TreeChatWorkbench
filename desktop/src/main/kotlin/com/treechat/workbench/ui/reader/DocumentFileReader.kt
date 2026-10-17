@@ -115,6 +115,12 @@ object DocumentFileReader {
         return doc.sampleText.substring(start, end).trim()
     }
 
+    /** 充面向兼容入口：保持安卓签名（context + Uri），桌面按文件路径读。 */
+    suspend fun importFromUri(
+        context: Context,
+        uri: android.net.Uri,
+    ): ReaderDocument? = importDocument(context, uri.toFile())
+
     /** 桌面导入入口：文件已存在磁盘上，复制到私有目录后走与安卓一致的解析链。 */
     suspend fun importDocument(context: Context, source: File): ReaderDocument? {
         lastError = null

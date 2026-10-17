@@ -18,6 +18,23 @@ object DocumentParser {
 
     class UnsupportedFormatException(message: String) : Exception(message)
 
+    /** 充面向的兼容入口：保持安卓签名（Context/Uri），桌面按文件路径读字节。 */
+    suspend fun parse(
+        context: android.content.Context,
+        uri: android.net.Uri,
+        displayName: String,
+        onOcrProgress: PdfOcr.ProgressListener? = null,
+    ): Parsed {
+        val file = uri.toFile()
+        val bytes = if (file.exists() && file.length() > 0) {
+            file.readBytes()
+        } else {
+            context.openFileInput(displayName)?.use { it.readBytes() }
+                ?: throw UnsupportedFormatException("无法读取文件：$displayName")
+        }
+        return parse(bytes, displayName, onOcrProgress)
+    }
+
     /** 桌面版入口：直接给字节（书架导入已把文件复制到 filesDir）。 */
     suspend fun parse(
         bytes: ByteArray,

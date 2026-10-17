@@ -16,7 +16,7 @@ import java.io.InputStream
  * - filesDir / applicationContext
  * - assets.open（etymology 词库 TSV → classpath 资源）
  */
-open class Context protected constructor() {
+open class Context internal constructor() {
     private val prefsCache = HashMap<String, SharedPreferences>()
 
     fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
@@ -28,12 +28,20 @@ open class Context protected constructor() {
     }
 
     val filesDir: File get() = File(DesktopAppEnvHolder.env.filesDir.path)
+    val cacheDir: File get() = File(filesDir, "cache")
+    val packageName: String get() = "com.treechat.workbench"
+    val contentResolver: ContentResolver get() = ContentResolver()
     val applicationContext: Context get() = this
     val assets: AssetManager get() = DesktopAssetManager
 
     fun getSystemService(name: String): Any? = when (name) {
         CLIPBOARD_SERVICE -> DesktopServices.clipboard
         else -> null
+    }
+
+    /** 桌面无外部 Activity；共享代码的 startActivity 退化为日志。 */
+    open fun startActivity(intent: android.content.Intent?) {
+        System.err.println("[facade] startActivity ignored: ${intent?.action}")
     }
 
     fun openFileInput(name: String): InputStream =

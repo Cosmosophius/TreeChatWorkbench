@@ -274,7 +274,6 @@ fun DesktopReaderHost(
                                 ),
                                 onPickWord = { focusedWord = it },
                                 onWordFocused = { focusedWord = it },
-                                onOpenNotesBoard = { toast = "注释板 M3 接入" },
                                 modifier = Modifier.width(260.dp).fillMaxHeight(),
                             )
                         }

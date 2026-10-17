@@ -17,17 +17,43 @@ val m2SharedIncludes = listOf(
     "ui/markdown/**",
     "ui/theme/**",
     "ui/motion/**",
+    "ui/tree/**",
+    "ui/window/**",
     "ui/common/**",
+    "ui/components/**",
+    "ui/chat/ChatNodeViewModel.kt",
+    "ui/chat/PromptContextBudget.kt",
+    "ui/chat/SmoothReveal.kt",
+    "ui/chat/ChatMessageView.kt",
+    "ui/explorer/**",
+    "ui/knowledge/**",
+    "ui/dictionary/**",
+    "ui/notes/**",
+    "ui/settings/**",
+    "ui/search/**",
+    "ui/desktop/**",
+    "export/TalkTreeBundle.kt",
+    "export/ZipExporter.kt",
     "ui/reader/**",
     "etymology/data/**",
+    "etymology/repository/**",
+    "etymology/rp/**",
+    "etymology/ui/**",
     "etymology/engine/FormantSynth.kt",
     "etymology/engine/HistoricalIpaPhoneMap.kt",
     "data/model/**",
     "data/db/SearchModels.kt",
     "data/db/SearchProjections.kt",
+    "data/db/ConversationSearchRepository.kt",
+    "data/db/ConversationDao.kt",
+    "data/db/FolderDao.kt",
+    "data/db/HighlightDao.kt",
+    "data/db/KnowledgeDao.kt",
+    "data/db/WordDao.kt",
     "data/prefs/**",
     "network/**",
     "util/**",
+    "export/TalkTreeBundle.kt",
     "task/**",
     "safety/**",
     "rag/**",
@@ -35,22 +61,18 @@ val m2SharedIncludes = listOf(
 
 // 平台绑死、由桌面替身顶住的共享文件（替身在 desktop/src/main/kotlin 同包同名）。
 val platformBoundExcludes = listOf(
-    // 数据库由桌面 sqlite-jdbc 实现（M3 接 UI，DAO 文件先不编译）
+    // 数据库由桌面 sqlite-jdbc 实现（substitute 同名 AppDatabase + Desktop*Dao）
     "rag/DocumentParser.kt",
     "rag/ImagePicker.kt",
     "rag/PdfTextExtractor.kt",
-    "rag/KnowledgeRetriever.kt",
     "etymology/engine/IpaAudioSynthesizer.kt",
     "ocr/OcrEngine.kt",
     "ocr/PdfOcr.kt",
     "ocr/PdfPageSource.kt",
     "ui/reader/DocumentFileReader.kt",
-    "ui/reader/ReaderScreen.kt",
     "ui/reader/CoverExtractor.kt",
-    "ui/reader/SentenceTranslateSheet.kt",
-    "ui/reader/ShelfComponents.kt",      // 书架壳桌面 v2 自有实现（安卓版含闲置 Activity import + 系统栏/SAF 逻辑）
-    "ui/selection/TextCursorGuard.kt",   // LocalView/PointerIcon 专属；桌面光标由系统接管
-    "ui/common/FreePositionStore.kt",    // 书卡自由摆放（M5 桌面书架再评估）
+    "ui/selection/TextCursorGuard.kt",   // 桌面替身已接管（系统自带文本光标）
+    "ui/common/FreePositionStore.kt",    // 桌面替身已接管（同 API Properties 版）
     "util/AppEdition.kt",
 )
 
@@ -87,6 +109,8 @@ dependencies {
     implementation("com.ibm.icu:icu4j:74.2")           // MessageSelectionController 汉字分词（Maven Central 最新稳定）
     // Room 注解（仅 @Entity/@Index 编译期符号；桌面不用 Room 运行时）
     implementation("androidx.room:room-common:2.6.1")
+    // AndroidViewModel 基类：androidx 把桌面 JVM 实现发布在 lifecycle-viewmodel-desktop 模块
+    implementation("androidx.lifecycle:lifecycle-viewmodel-desktop:2.8.4")
     // PDF：桌面端 PDFBox（安卓侧是 com.tom-roush:pdfbox-android）
     implementation("org.apache.pdfbox:pdfbox:2.0.27")
     // M3 数据库（M3 里程碑接 UI）
