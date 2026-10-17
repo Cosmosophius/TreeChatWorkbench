@@ -24,6 +24,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -704,6 +710,44 @@ internal fun LiveTextPageCard(
                             .fillMaxWidth()
                             .padding(16.dp)
                     )
+                }
+            }
+
+            // ---- 沉浸态左右边缘翻页钮 ----
+            //
+            // 为什么只在沉浸态显示：正常态有底部翻页条与滑动翻页，边缘再放按钮是重复；
+            // 沉浸态把一切都收了（整屏只剩正文），横向滑动的触屏手势又容易被
+            // "按住文字选词"抢走 —— 用户要的是**始终可达**的显式翻页入口。
+            //
+            // 按钮是真实组件、会拦下自己圆区内的按压：这正是想要的行为
+            //（按它=翻页，绝不被选词/挪纸判走）；区域刻意收小并贴边，
+            // 扫描页文字顶到边的概率低，挤占选词起手的面积可忽略。
+            if (isImmersive && page != null) {
+                listOf(
+                    Alignment.CenterStart to -1,
+                    Alignment.CenterEnd to 1
+                ).forEach { (anchor, direction) ->
+                    Surface(
+                        onClick = { onSwipePage(direction) },
+                        shape = CircleShape,
+                        color = scheme.scrim.copy(alpha = 0.32f),
+                        modifier = Modifier
+                            .align(anchor)
+                            .padding(horizontal = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (direction < 0) {
+                                Icons.AutoMirrored.Outlined.KeyboardArrowLeft
+                            } else {
+                                Icons.AutoMirrored.Outlined.KeyboardArrowRight
+                            },
+                            contentDescription = if (direction < 0) "上一页" else "下一页",
+                            tint = scheme.onPrimary,
+                            modifier = Modifier
+                                .padding(6.dp)
+                                .size(28.dp)
+                        )
+                    }
                 }
             }
 
