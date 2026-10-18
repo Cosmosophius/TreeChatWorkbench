@@ -833,21 +833,11 @@ private fun ProviderEditor(
                                 // ---------------- Embedding 向量模型服务商（知识库检索） ----------------
                                 EmbeddingProviderSection(settings)
 
-                                Spacer(modifier = Modifier.height(8.dp))
-                            }
-                        }
-                    }
-
-                    SettingsTab.APPEARANCE_AND_PREFS -> {
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            // ---------------- 联网搜索（原检索与知识库合并至此） ----------------
+                                // ---------------- 联网搜索 ----------------
+                                //
+                                // 放在「服务商与模型」页：搜索 Key 与模型服务商同源，
+                                // 用户不必跑到「外观与偏好」里去找（2026-10-18 用户反馈）。
+                                Divider()
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.Search,
@@ -1129,6 +1119,21 @@ private fun ProviderEditor(
                                     }
                                 }
                             }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                        }
+                    }
+
+                    SettingsTab.APPEARANCE_AND_PREFS -> {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
 
                             Divider()
                             Spacer(modifier = Modifier.height(6.dp))

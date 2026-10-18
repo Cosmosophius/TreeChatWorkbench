@@ -1944,22 +1944,29 @@ private fun ShelfContent(
                             Box(
                                 modifier = Modifier
                                     .offset(x = pos.x.dp, y = pos.y.dp)
-                                    .then(
-                                        // 拖拽跟手：被拖的书**本体**随手指走（不只是幽灵卡），
-                                        // 松手时 onDragRelease 已把正式落点写进 positions ——
-                                        // 视觉位移在那一刻与落点重合，无跳变。
-                                        if (draggedEntry?.document?.id == entry.document.id &&
-                                            trashDragPos != null && dragStartPos != null
-                                        ) {
-                                            val delta = trashDragPos!! - dragStartPos!!
-                                            Modifier.offset(
-                                                x = with(density) { delta.x.toDp() },
-                                                y = with(density) { delta.y.toDp() }
+                                    // 拖拽跟手：被拖的书**本体**随手指走。
+                                    //
+                                    // ⚠️ 必须用 `offset { }` 的 **lambda 形式**：
+                                    // 状态在**布局阶段**读取，只重排不重组。若在组合期
+                                    // 读 trashDragPos/dragStartPos，每张书卡都会订阅
+                                    // 这两个状态 —— 每根手指移动一次就重组**整屏书架**
+                                    // （含每张封面的位图重算），在平板上直接卡成"拖不动"。
+                                    // 写成组合期的 `Modifier.offset(x = ...)` 就是这个回归的成因。
+                                    .offset {
+                                        val start = dragStartPos
+                                        val cur = trashDragPos
+                                        val isDragged =
+                                            draggedEntry?.document?.id == entry.document.id
+                                        if (isDragged && start != null && cur != null) {
+                                            val d = cur - start
+                                            IntOffset(
+                                                with(density) { d.x.toDp().roundToPx() },
+                                                with(density) { d.y.toDp().roundToPx() }
                                             )
                                         } else {
-                                            Modifier
+                                            IntOffset.Zero
                                         }
-                                    )
+                                    }
                                     .size(SHELF_CELL_W_DP.dp, SHELF_CELL_H_DP.dp)
                             ) {
                                 ShelfBookCard(
