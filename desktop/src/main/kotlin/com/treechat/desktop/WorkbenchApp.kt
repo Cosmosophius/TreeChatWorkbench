@@ -76,6 +76,9 @@ import com.treechat.workbench.ui.tree.TreeTopologyCanvas
 import com.treechat.workbench.ui.window.FloatingWindowItem
 import com.treechat.workbench.ui.window.FloatingWindowManager
 import com.treechat.workbench.ui.window.WindowSpace
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.awt.FileDialog
 import javax.swing.SwingUtilities
 import kotlinx.coroutines.launch
@@ -274,22 +277,19 @@ private fun DesktopMainScreen(
                 TopAppBar(
                     title = { Text("条畅") },
                     actions = {
-                        // 当前模型快击菜单（M4 对齐完整 ProviderAndModelMenu）
+                        // 当前模型快击菜单（对齐安卓 ProviderAndModelMenu 两段结构）
                         Box {
                             IconButton(onClick = { showProviderMenu = !showProviderMenu }) {
                                 Icon(Icons.Filled.MoreVert, contentDescription = "模型")
                             }
-                            DropdownMenu(expanded = showProviderMenu, onDismissRequest = { showProviderMenu = false }) {
-                                viewModel.savedProviders.forEach { provider ->
-                                    DropdownMenuItem(
-                                        text = { Text("${provider.name} · ${provider.selectedModelId ?: "未选模型"}") },
-                                        onClick = {
-                                            viewModel.selectProvider(provider.id)
-                                            showProviderMenu = false
-                                        },
-                                    )
-                                }
-                            }
+                            DesktopProviderAndModelMenu(
+                                expanded = showProviderMenu,
+                                onDismiss = { showProviderMenu = false },
+                                viewModel = viewModel,
+                                provider = viewModel.activeProvider,
+                                providerStore = providerStore,
+                                onOpenSettings = { showSettings = true },
+                            )
                         }
                         IconButton(onClick = { showSettings = true }) {
                             Icon(Icons.Filled.Settings, contentDescription = "设置")
@@ -422,7 +422,11 @@ private fun DesktopMainScreen(
                         )
                     },
                 )
-                WorkbenchViewMode.BROWSER -> PlaceholderPane("桌面浏览器在 M4 换独立窗口方案")
+                WorkbenchViewMode.BROWSER -> DesktopBrowserPane(
+                    env = DesktopAppEnvHolder.env,
+                    settings = settings,
+                    toast = { toast = it },
+                )
             }
         }
     }
@@ -558,6 +562,7 @@ private fun DesktopInkWorkbench(
 ) {
     val context = DesktopAppEnvHolder.appContext
     val inkNoteStore = remember { com.treechat.workbench.data.prefs.InkNoteStore(context) }
+    val scope = rememberCoroutineScope()
     var boards by remember { mutableStateOf(inkNoteStore.loadAllBoards()) }
     var activeInkBoardId by remember {
         mutableStateOf(inkNoteStore.getActiveBoardId() ?: inkNoteStore.loadAllBoards().firstOrNull()?.id)
@@ -577,7 +582,46 @@ private fun DesktopInkWorkbench(
             refresh(selectId = id)
         },
         onCreateSnapshotFromCurrentTree = {
-            toast("画布快照到白板在 M5 收口（当前版本可直接在白板里自由布局）")
+            // 照安卓 createSnapshotToInkNotes 语义：当前树拓扑 → 白板卡片快照
+            scope.launch {
+                runCatching {
+                    val nodesSnapshot = viewModel.nodes.value
+                    val summaries = viewModel.loadNodeSummaries(nodesSnapshot.map { it.id })
+                    val fallbackPositions = com.treechat.workbench.ui.tree.computeGraphLayout(nodesSnapshot)
+                    val defaultW = 430f
+                    val defaultH = 236f
+                    val cardSnapshots = nodesSnapshot.map { node ->
+                        val pos = graphState.positions[node.id]
+                            ?: fallbackPositions[node.id]
+                            ?: androidx.compose.ui.geometry.Offset.Zero
+                        val customSize = graphState.nodeSizes[node.id]
+                        val summaryText = summaries[node.id]
+                        val autoH = if (!summaryText.isNullOrBlank()) defaultH * 1.45f else defaultH
+                        com.treechat.workbench.data.prefs.InkCardSnapshot(
+                            id = node.id,
+                            parentId = node.parentId,
+                            title = node.title.ifBlank { "未命名分支" },
+                            quote = node.originQuote,
+                            summary = summaryText,
+                            x = pos.x,
+                            y = pos.y,
+                            width = customSize?.width ?: defaultW,
+                            height = customSize?.height ?: autoH,
+                        )
+                    }
+                    val newBoard = com.treechat.workbench.data.prefs.InkNoteBoard(
+                        title = com.treechat.workbench.data.prefs.InkNoteStore
+                            .formatDefaultTitle(viewModel.activeConversation.value?.title),
+                        sourceConversationId = viewModel.activeConversation.value?.id,
+                        cards = cardSnapshots,
+                        strokes = emptyList(),
+                    )
+                    inkNoteStore.saveBoard(newBoard)
+                    boards = inkNoteStore.loadAllBoards()
+                    activeInkBoardId = newBoard.id
+                    toast("已把画布快照存进白板")
+                }.onFailure { toast("快照失败：${it.message}") }
+            }
         },
         onSaveBoard = { updated ->
             inkNoteStore.saveBoard(updated)
@@ -595,8 +639,28 @@ private fun DesktopInkWorkbench(
             inkNoteStore.deleteBoard(boardId)
             refresh()
         },
-        onExportBoard = { _ , isPdf ->
-            toast(if (isPdf) "墨迹导出 PDF 在 M5 收口" else "墨迹导出图片在 M5 收口")
+        onExportBoard = { board, isPdf ->
+            // 照安卓 exportInkNoteAndShare：导出文件 + 保存对话框（桌面链）
+            scope.launch {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        val out = com.treechat.workbench.export.InkNoteExporter
+                            .outputFile(DesktopAppEnvHolder.appContext, board, isPdf)
+                        if (isPdf) {
+                            com.treechat.workbench.export.InkNoteExporter.exportPdf(board, out)
+                        } else {
+                            com.treechat.workbench.export.InkNoteExporter.exportPng(board, out)
+                        }
+                    }
+                }.onSuccess { file ->
+                    com.treechat.workbench.export.ZipExporter.shareFile(
+                        DesktopAppEnvHolder.appContext,
+                        file,
+                        mimeType = if (isPdf) "application/pdf" else "image/png",
+                        title = "导出/分享手写笔记",
+                    )
+                }.onFailure { toast("导出失败：${it.message}") }
+            }
         },
     )
 }

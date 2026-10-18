@@ -138,6 +138,10 @@ compose.desktop {
             packageName = "条畅"
             packageVersion = "1.41.0"
             modules("java.instrument", "java.management", "jdk.unsupported", "java.naming", "java.sql")
+            macOS {
+                iconFile.set(rootProject.file("desktop/resources/条畅.icns"))
+                bundleID = "com.treechat.workbench.desktop"
+            }
         }
     }
 }
