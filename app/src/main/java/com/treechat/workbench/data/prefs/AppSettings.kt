@@ -175,6 +175,10 @@ class AppSettings(private val context: Context) {
     var searchApiKey by mutableStateOf("")
         private set
 
+    /** DeepSeek **专用搜索 Key**（与聊天 Key 分开申请、分开计费）。 */
+    var deepseekSearchKey by mutableStateOf("")
+        private set
+
     var searxngBaseUrl by mutableStateOf("")
         private set
 
@@ -229,6 +233,7 @@ class AppSettings(private val context: Context) {
             SearchBackend.valueOf(prefs.getString(KEY_SEARCH_BACKEND, SearchBackend.NATIVE.name)!!)
         }.getOrDefault(SearchBackend.NATIVE)
         searchApiKey = prefs.getString(KEY_SEARCH_API_KEY, "").orEmpty()
+        deepseekSearchKey = prefs.getString(KEY_DEEPSEEK_SEARCH_KEY, "").orEmpty()
         searxngBaseUrl = prefs.getString(KEY_SEARXNG_URL, "").orEmpty()
         searchMaxResults = prefs.getInt(KEY_SEARCH_MAX_RESULTS, 5)
 
@@ -336,6 +341,11 @@ class AppSettings(private val context: Context) {
         write { putString(KEY_SEARCH_API_KEY, key) }
     }
 
+    fun updateDeepSeekSearchKey(key: String) {
+        deepseekSearchKey = key
+        write { putString(KEY_DEEPSEEK_SEARCH_KEY, key) }
+    }
+
     fun updateSearxngBaseUrl(url: String) {
         searxngBaseUrl = url
         write { putString(KEY_SEARXNG_URL, url) }
@@ -385,7 +395,8 @@ class AppSettings(private val context: Context) {
         backend = searchBackend,
         apiKey = searchApiKey,
         searxngBaseUrl = searxngBaseUrl,
-        maxResults = searchMaxResults
+        maxResults = searchMaxResults,
+        deepseekSearchKey = deepseekSearchKey
     )
 
     /**
@@ -394,7 +405,10 @@ class AppSettings(private val context: Context) {
      */
     fun searchConfigIssue(): String? = when {
         !searchEnabled -> null
-        searchBackend.requiresApiKey && searchApiKey.isBlank() ->
+        // DeepSeek 搜索 Key 可以留空：留空即回退到已保存的 DeepSeek 聊天 Key
+        //（与 NATIVE 的自动提取同一套机制），所以不报"缺 Key"。
+        searchBackend.requiresApiKey && searchApiKey.isBlank() &&
+            searchBackend != com.treechat.workbench.network.search.SearchBackend.DEEPSEEK_SEARCH ->
             "已开启联网搜索，但未填写 ${searchBackend.displayName} 的 API Key"
         searchBackend.requiresBaseUrl && searxngBaseUrl.isBlank() ->
             "已开启联网搜索，但未填写 SearXNG 实例地址"
@@ -424,6 +438,7 @@ class AppSettings(private val context: Context) {
         private const val KEY_SEARCH_ENABLED = "search_enabled"
         private const val KEY_SEARCH_BACKEND = "search_backend"
         private const val KEY_SEARCH_API_KEY = "search_api_key"
+        private const val KEY_DEEPSEEK_SEARCH_KEY = "deepseek_search_key"
         private const val KEY_SEARXNG_URL = "searxng_url"
         private const val KEY_SEARCH_MAX_RESULTS = "search_max_results"
         private const val KEY_CLOUD_RAG_ENABLED = "cloud_rag_enabled"

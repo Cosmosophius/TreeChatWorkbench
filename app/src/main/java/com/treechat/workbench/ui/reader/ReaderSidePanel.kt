@@ -284,18 +284,20 @@ fun ReaderSidePanel(
             }
         }
 
-        // ---- 左缘拖动把手：横向拖改变宽度 ----
+        // ---- 左缘把手：横向拖改变宽度；**点箭头 = 完全收起** ----
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
-                .width(14.dp)
+                .width(20.dp)
                 .fillMaxHeight()
                 .background(scheme.surfaceContainerHighest.copy(alpha = 0.24f))
+                // 点一下箭头（无位移的按-抬）= 完全收起：
+                // 用户明确要求"点一下那个箭头可以完全收起"。
+                .clickable { state.applyExpanded(false) }
                 .pointerInput(Unit) {
                     detectDragGestures(
                         onDrag = { change, delta ->
-                            // 把手贴住手指：向左拖（dx<0）= 面板变宽；
-                            // 旧写法方向反了，"向左拖想要变宽结果变窄"。
+                            // 把手贴住手指：向左拖（dx<0）= 面板变宽。
                             state.applyWidth(state.widthDp - (delta.x / density.density).toInt())
                             change.consume()
                         }
@@ -305,7 +307,7 @@ fun ReaderSidePanel(
         ) {
             Icon(
                 imageVector = Icons.Outlined.ChevronRight,
-                contentDescription = "拖动调整宽度",
+                contentDescription = "点按收起侧栏，拖动调整宽度",
                 tint = scheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
             )

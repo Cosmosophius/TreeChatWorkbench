@@ -941,6 +941,10 @@ private fun ProviderEditor(
                                             "调用 SearXNG 实例的 JSON 接口，若未填写地址将自动使用内置高可用公共节点池。"
                                         SearchBackend.TAVILY ->
                                             "第三方搜索 API，为 LLM 优化，稳定，但需要单独申请 Key（可能要付费）。"
+                                        SearchBackend.DEEPSEEK_SEARCH ->
+                                            "DeepSeek 官方搜索端点直连（deepseek-v4-flash + 服务端 web_search 工具）。" +
+                                                "可填专用的搜索 Key（独立申请、独立计费）；留空则自动复用已保存的" +
+                                                "DeepSeek 聊天 Key。失败时不会静默换成别的引擎。"
                                     },
                                     color = TextMuted,
                                     fontSize = 10.sp,
@@ -955,6 +959,49 @@ private fun ProviderEditor(
                                         placeholder = "tvly-...",
                                         password = true
                                     )
+                                }
+
+                                if (settings.searchBackend == SearchBackend.DEEPSEEK_SEARCH) {
+                                    FieldLabel("DeepSeek 搜索 Key（新搜索 Key，可留空）")
+                                    StyledTextField(
+                                        value = settings.deepseekSearchKey,
+                                        onValueChange = { settings.updateDeepSeekSearchKey(it) },
+                                        placeholder = "sk-…（留空则复用已保存的 DeepSeek 聊天 Key）",
+                                        password = true
+                                    )
+                                    // ---- 一键预设 ----
+                                    //
+                                    // 用户拿到 DeepSeek 新出的搜索 Key 后最省事的路径：
+                                    // 粘进来，或者从已保存的服务商里捞一把聊天 Key 先用起来。
+                                    val savedDeepSeekKey = providers
+                                        .firstOrNull {
+                                            it.id.contains("deepseek", ignoreCase = true) ||
+                                                it.baseUrl.contains("api.deepseek.com", ignoreCase = true)
+                                        }
+                                        ?.apiKey
+                                        ?.takeIf { it.isNotBlank() }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        savedDeepSeekKey?.let { key ->
+                                            Text(
+                                                text = "用已保存的 DeepSeek Key 填入",
+                                                color = AccentNeonGreen,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.clickable {
+                                                    settings.updateDeepSeekSearchKey(key)
+                                                }
+                                            )
+                                        }
+                                        if (settings.deepseekSearchKey.isNotBlank()) {
+                                            Text(
+                                                text = "清除",
+                                                color = TextMuted,
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.clickable {
+                                                    settings.updateDeepSeekSearchKey("")
+                                                }
+                                            )
+                                        }
+                                    }
                                 }
 
                                 if (settings.searchBackend.requiresBaseUrl) {

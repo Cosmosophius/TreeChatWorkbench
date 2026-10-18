@@ -1677,6 +1677,8 @@ private fun ShelfContent(
         }
         // 拖拽幽灵：拖动中的书跟手（书架自由摆放画布只挪落点，视觉必须由外层补）
         var draggedEntry by remember { mutableStateOf<ShelfEntry?>(null) }
+        // 拖拽起手点（root 像素）：书本体跟手的位移基准
+        var dragStartPos by remember { mutableStateOf<Offset?>(null) }
         // 云端面板与登录
         var drivePanelOpen by remember { mutableStateOf(false) }
 
@@ -1942,6 +1944,22 @@ private fun ShelfContent(
                             Box(
                                 modifier = Modifier
                                     .offset(x = pos.x.dp, y = pos.y.dp)
+                                    .then(
+                                        // 拖拽跟手：被拖的书**本体**随手指走（不只是幽灵卡），
+                                        // 松手时 onDragRelease 已把正式落点写进 positions ——
+                                        // 视觉位移在那一刻与落点重合，无跳变。
+                                        if (draggedEntry?.document?.id == entry.document.id &&
+                                            trashDragPos != null && dragStartPos != null
+                                        ) {
+                                            val delta = trashDragPos!! - dragStartPos!!
+                                            Modifier.offset(
+                                                x = with(density) { delta.x.toDp() },
+                                                y = with(density) { delta.y.toDp() }
+                                            )
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
                                     .size(SHELF_CELL_W_DP.dp, SHELF_CELL_H_DP.dp)
                             ) {
                                 ShelfBookCard(
@@ -1977,7 +1995,15 @@ private fun ShelfContent(
                                             ignoreCase = true
                                         ),
                                     trashBounds = trashBounds,
-                                    onDragFingerChange = { pos -> trashDragPos = pos; draggedEntry = if (pos == null) null else entry },
+                                    onDragFingerChange = { pos ->
+                                        trashDragPos = pos
+                                        draggedEntry = if (pos == null) null else entry
+                                        dragStartPos = when {
+                                            pos == null -> null
+                                            dragStartPos == null -> pos
+                                            else -> dragStartPos
+                                        }
+                                    },
                                     onDropToTrash = { batchDeleteConfirm = true },
                                     driveBounds = driveBounds,
                                     onDropToDrive = {
@@ -2053,7 +2079,15 @@ private fun ShelfContent(
                                     ignoreCase = true
                                 ),
                             trashBounds = trashBounds,
-                            onDragFingerChange = { pos -> trashDragPos = pos; draggedEntry = if (pos == null) null else entry },
+                            onDragFingerChange = { pos ->
+                                        trashDragPos = pos
+                                        draggedEntry = if (pos == null) null else entry
+                                        dragStartPos = when {
+                                            pos == null -> null
+                                            dragStartPos == null -> pos
+                                            else -> dragStartPos
+                                        }
+                                    },
                             onDropToTrash = { batchDeleteConfirm = true }
                         )
                     }

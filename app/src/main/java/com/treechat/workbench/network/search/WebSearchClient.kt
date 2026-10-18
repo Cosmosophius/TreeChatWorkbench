@@ -59,7 +59,17 @@ enum class SearchBackend {
     BING,
     DUCKDUCKGO,
     SEARXNG,
-    TAVILY;
+    TAVILY,
+    /**
+     * DeepSeek 官方搜索（**专用搜索 Key 预设**，2026-10-18 新增）。
+     *
+     * 与 [NATIVE] 的区别：NATIVE 的 DeepSeek 通路自动复用"已保存的 DeepSeek
+     * 聊天 Key"；本后端用于 DeepSeek 新推出的**独立搜索 Key**——
+     * 单独申请、单独计费、只用于搜索，不与聊天 Key 混用。
+     * 通路本身相同（`/anthropic/v1/messages` + `web_search_20250305` 服务端工具），
+     * 只是 Key 的来源不同：优先专用 Key，未填时回退已保存的聊天 Key。
+     */
+    DEEPSEEK_SEARCH;
 
     val displayName: String
         get() = when (this) {
@@ -69,11 +79,12 @@ enum class SearchBackend {
             DUCKDUCKGO -> "DuckDuckGo（免密钥，网页抓取）"
             SEARXNG -> "SearXNG（内置公共池 / 自建实例，免密钥）"
             TAVILY -> "Tavily（需 API Key，第三方搜索服务）"
+            DEEPSEEK_SEARCH -> "DeepSeek 官方搜索（新搜索 Key，专用直连）"
         }
 
     /** 是否必须填 API Key。 */
     val requiresApiKey: Boolean
-        get() = this == TAVILY
+        get() = this == TAVILY || this == DEEPSEEK_SEARCH
 
     /** 是否需要填自定义实例地址。 */
     val requiresBaseUrl: Boolean
@@ -93,7 +104,12 @@ data class SearchConfig(
      * 即使当前正在用小米 MiMo 或反代 Gemini 聊天，也能自动复用这把 Key
      * 调用 https://api.deepseek.com/anthropic/v1/messages 完成官方原生搜索。
      */
-    val deepseekApiKey: String = ""
+    val deepseekApiKey: String = "",
+    /**
+     * DeepSeek **专用搜索 Key**（新出的独立搜索 Key，与聊天 Key 分开申请/计费）。
+     * 仅 [SearchBackend.DEEPSEEK_SEARCH] 使用；空 = 回退到自动提取的聊天 Key。
+     */
+    val deepseekSearchKey: String = ""
 )
 
 /**
@@ -208,6 +224,25 @@ class WebSearchClient(
                     }
                 }
                 SearchBackend.TAVILY -> searchTavily(query, config)
+                SearchBackend.DEEPSEEK_SEARCH -> {
+                    // 显式选了 DeepSeek 搜索就**只**走 DeepSeek 官方端点：
+                    // 专用 Key 优先，未填则回退已保存的 DeepSeek 聊天 Key；
+                    // 两者皆无 → 抛错（用户显式选择的后端不静默换引擎）。
+                    val key = config.deepseekSearchKey.ifBlank { resolveDeepSeekSearchKey(config, provider) }
+                    if (key.isBlank()) {
+                        throw IllegalStateException(
+                            "未填写 DeepSeek 搜索 Key（设置 → 联网搜索），也未在服务商里保存过 DeepSeek 聊天 Key"
+                        )
+                    }
+                    executeAnthropicWebSearch(
+                        endpoint = DEEPSEEK_DEFAULT_SEARCH_ENDPOINT,
+                        apiKey = key,
+                        model = DEEPSEEK_DEFAULT_SEARCH_MODEL,
+                        maxTokens = DEEPSEEK_DEFAULT_MAX_TOKENS,
+                        query = query,
+                        maxUses = config.maxResults.coerceIn(1, 10)
+                    )
+                }
             }
             Result.success(results)
         } catch (e: Exception) {
@@ -303,6 +338,7 @@ class WebSearchClient(
                 }
             }
             SearchBackend.TAVILY -> "https://api.tavily.com/search"
+            SearchBackend.DEEPSEEK_SEARCH -> DEEPSEEK_DEFAULT_SEARCH_ENDPOINT
         }
     }
 
