@@ -189,3 +189,20 @@ M2 预备知识（给下个会话）：
      smoketime 校验 `Dispatchers.Main` 从 [missing] 变正常。
 - **下一批待办**：墨迹快照/导出 batching；BROWSER 独立顶层窗方案落点；用户真机点验清单
   （会话创建→发消息流式回复→书架拖拽云盘→划选词条→命令面板）。
+
+### M5 补齐：缺口 + 图标（2026-10-18 晚，用户点名）
+
+- **图标**：App 品牌 icns（深底绿环「条」字，`desktop/resources/条畅.icns`，挂 mac bundle
+  `macOS { iconFile }` + bundleID）；代码里两处 `painterResource` 占位换真绘制
+  （`VectorPlaceholderPainter`：注音角标=圆环+声调波纹；手写=笔杆+笔头），共享代码未改。
+- **模型快击菜单完整化**：`DesktopProviderAndModelMenu`（复刻安卓两段结构：
+  服务商切换段＋当前服务商模型段——含 ctx 窗口显示、当前项打勾、设置入口；
+  模型切换=改 selectedModelId 后 `replaceProviders` 回写）。
+- **浏览器 Tab 桌面方案**：`DesktopBrowserPane`（URL 输入 → `AppEnv.openLink` 系统默认浏览器；
+  桌面不内嵌 WebView 覆盖层——告知用户与安卓差异及配合方式：网页复制回条畅划词提问）。
+- **墨迹**：画布快照真实现（`viewModel.nodes`/`loadNodeSummaries`/`computeGraphLayout`/
+  `graphState.positions` → `InkNoteBoard`，照安卓字段）；`InkNoteExporter` 桌面版
+  （java2D 渲 PNG + pdfbox 包 PDF；导出走 ZipExporter 保存对话框）。
+- **验证**：全量编译绿；smoke Main 正常；安卓双 flavor 离线绿；dmg/zip 重出（含图标）。
+- **剩余已知缺口（如实）**：扫描件 OCR 选词（规划为桌面 v2/onnx Paddle 评估）；
+  工作台视觉与安卓原版仍有细节差距（药丸 Tab/顶栏等）；AI 对话需用户自行配置服务商密钥后实测。
