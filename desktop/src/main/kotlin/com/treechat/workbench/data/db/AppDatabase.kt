@@ -116,7 +116,7 @@ private val SCHEMA: List<String> = listOf(
         updated_at INTEGER NOT NULL,
         is_pinned INTEGER NOT NULL,
         is_favorite INTEGER NOT NULL,
-        FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET_NULL
+        FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL
     )""",
     "CREATE INDEX IF NOT EXISTS index_conversations_folder_id ON conversations (folder_id)",
     """

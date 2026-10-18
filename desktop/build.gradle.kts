@@ -4,6 +4,8 @@
 // 与「同 API 桌面替身」（DocumentFileReader/PdfPageSource/OcrEngine…）顶住。
 // 共享源码一行不改，安卓发版路径零影响。
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.net.HttpURLConnection
+import java.net.URI
 
 val appSourcesRoot = rootProject.file("app/src/main/java/com/treechat/workbench")
 
@@ -78,6 +80,7 @@ val platformBoundExcludes = listOf(
     "ui/reader/CoverExtractor.kt",
     "ui/selection/TextCursorGuard.kt",   // 桌面替身已接管（系统自带文本光标）
     "ui/common/FreePositionStore.kt",    // 桌面替身已接管（同 API Properties 版）
+    "export/ZipExporter.kt",             // 桌面替身已接管（保存对话框）
     "util/AppEdition.kt",
 )
 
@@ -107,6 +110,8 @@ dependencies {
 
     // 共享源码依赖（与安卓侧同版本或兼容版本）
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")   // SwingDispatcherFactory（实例由 Main 里反射注入）
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")    // Dispatchers.setMain（公开 API）
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
@@ -127,6 +132,13 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.treechat.desktop.MainKt"
+        nativeDistributions {
+            // M5 打包：本机出 macOS dmg；linux-arm64 用 fat jar + 启动脚本（jpackage 跨机不行）
+            targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg)
+            packageName = "条畅"
+            packageVersion = "1.41.0"
+            modules("java.instrument", "java.management", "jdk.unsupported", "java.naming", "java.sql")
+        }
     }
 }
 
@@ -147,4 +159,45 @@ sourceSets.getByName("main").resources.srcDir(assetsBridgeDir)
 
 tasks.matching { it.name.lowercase().contains("processResources") }.configureEach {
     dependsOn(copyDictAssets)
+}
+
+// ---- M5 打包：linux-arm64 便携 zip ----
+// jpackage 无法在 macOS 上交叉打 Linux 目标；做法 = 主 jar + 全部 runtime 类 jar 打成 zip，
+// 附带启动脚本（JDK 21+ 检测），并补拉 linux-arm64 的 skiko 原生库（本机 runtimeClasspath 只含 macos）。
+
+val skikoLinuxArm64Version = "0.8.4"   // 对齐 CMP 1.6.11 的 skiko 原生版本（运行时 classpath 可见 macos 同版）
+val skikoLinuxArm64Url = "https://repo.maven.apache.org/maven2/org/jetbrains/skiko/skiko-awt-runtime-linux-arm64/$skikoLinuxArm64Version/skiko-awt-runtime-linux-arm64-$skikoLinuxArm64Version.jar"
+
+val downloadSkikoLinuxArm64 = tasks.register("downloadSkikoLinuxArm64") {
+    val targetFile = layout.buildDirectory.file("skiko-linux/skiko-awt-runtime-linux-arm64-$skikoLinuxArm64Version.jar")
+    outputs.file(targetFile)
+    onlyIf { !targetFile.get().asFile.isFile }
+    doLast {
+        val dest = targetFile.get().asFile
+        dest.parentFile.mkdirs()
+        val conn = URI(skikoLinuxArm64Url).toURL().openConnection() as HttpURLConnection
+        conn.requestMethod = "GET"
+        try {
+            conn.inputStream.use { input -> dest.outputStream().use { out -> input.copyTo(out) } }
+        } finally {
+            conn.disconnect()
+        }
+    }
+}
+
+val linuxDistDir = layout.buildDirectory.dir("linux-arm64-dist")
+val collectLinuxRuntimeJars = tasks.register<Copy>("collectLinuxRuntimeJars") {
+    dependsOn(tasks.named("jar"), downloadSkikoLinuxArm64)
+    from(configurations.getByName("runtimeClasspath"))
+    from(downloadSkikoLinuxArm64.map { it.outputs })
+    into(linuxDistDir.map { it.dir("lib") })
+}
+
+val packageLinuxArm64Zip = tasks.register<Zip>("packageLinuxArm64Zip") {
+    dependsOn(collectLinuxRuntimeJars)
+    archiveFileName = "talktree-linux-arm64-1.41.0-desktop.3.zip"
+    destinationDirectory = layout.projectDirectory.dir("../release/desktop")
+    from(linuxDistDir)                                              // lib/**
+    from(layout.projectDirectory.dir("scripts/linux")) { include("talktree.sh") } // 启动脚本
+    from(rootProject.file("app/src/main/assets")) { include("*.tsv"); into("assets") } // 词库桥
 }

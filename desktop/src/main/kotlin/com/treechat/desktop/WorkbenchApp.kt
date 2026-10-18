@@ -390,7 +390,11 @@ private fun DesktopMainScreen(
                         }
                     },
                 )
-                WorkbenchViewMode.INK_NOTES -> PlaceholderPane("墨迹白板在 M4 接入")
+                WorkbenchViewMode.INK_NOTES -> DesktopInkWorkbench(
+                    viewModel = viewModel,
+                    graphState = graphState,
+                    toast = { toast = it },
+                )
                 WorkbenchViewMode.SHELF -> BookshelfScreen(
                     viewModel = viewModel,
                     windowManager = windowManager,
@@ -399,7 +403,25 @@ private fun DesktopMainScreen(
                     isImmersive = false,
                     onImmersiveChange = {},
                 )
-                WorkbenchViewMode.DICTIONARY -> PlaceholderPane("词典版面在 M4 接入")
+                WorkbenchViewMode.DICTIONARY -> com.treechat.workbench.ui.dictionary.DictionaryScreen(
+                    viewModel = viewModel,
+                    onAskWord = { title, question ->
+                        // 对齐安卓 MainActivity：单词本 = 一棵根对话树，每次查词是根下的子节点
+                        viewModel.createQuestionInSourceTree(
+                            sourceTitle = "单词本",
+                            question = question,
+                            originQuote = title,
+                            onCreated = { nodeId, _ ->
+                                windowManager.openSubWindow(
+                                    nodeId = nodeId,
+                                    title = "单词：$title",
+                                    originQuote = title,
+                                    depth = 1,
+                                )
+                            },
+                        )
+                    },
+                )
                 WorkbenchViewMode.BROWSER -> PlaceholderPane("桌面浏览器在 M4 换独立窗口方案")
             }
         }
@@ -525,4 +547,56 @@ private fun PlaceholderPane(message: String) {
     Column(Modifier.fillMaxSize().padding(24.dp)) {
         Text(message, style = MaterialTheme.typography.titleMedium)
     }
+}
+
+/** 墨迹白板（桌面接线：boards 状态 + store 直连，快照/导出在 M5 收口）。 */
+@Composable
+private fun DesktopInkWorkbench(
+    viewModel: ChatNodeViewModel,
+    graphState: GraphViewState,
+    toast: (String) -> Unit,
+) {
+    val context = DesktopAppEnvHolder.appContext
+    val inkNoteStore = remember { com.treechat.workbench.data.prefs.InkNoteStore(context) }
+    var boards by remember { mutableStateOf(inkNoteStore.loadAllBoards()) }
+    var activeInkBoardId by remember {
+        mutableStateOf(inkNoteStore.getActiveBoardId() ?: inkNoteStore.loadAllBoards().firstOrNull()?.id)
+    }
+
+    fun refresh(selectId: String? = null) {
+        val loaded = inkNoteStore.loadAllBoards()
+        boards = loaded
+        activeInkBoardId = selectId ?: inkNoteStore.getActiveBoardId() ?: loaded.firstOrNull()?.id
+    }
+
+    com.treechat.workbench.ui.notes.InkWorkbenchScreen(
+        boards = boards,
+        activeBoardId = activeInkBoardId,
+        onSelectBoard = { id ->
+            inkNoteStore.setActiveBoardId(id)
+            refresh(selectId = id)
+        },
+        onCreateSnapshotFromCurrentTree = {
+            toast("画布快照到白板在 M5 收口（当前版本可直接在白板里自由布局）")
+        },
+        onSaveBoard = { updated ->
+            inkNoteStore.saveBoard(updated)
+            refresh(selectId = updated.id)
+        },
+        onDuplicateBoard = { boardId ->
+            val copy = inkNoteStore.duplicateBoard(boardId)
+            if (copy != null) refresh(selectId = copy.id)
+        },
+        onRenameBoard = { boardId, newTitle ->
+            inkNoteStore.renameBoard(boardId, newTitle)
+            refresh(selectId = boardId)
+        },
+        onDeleteBoard = { boardId ->
+            inkNoteStore.deleteBoard(boardId)
+            refresh()
+        },
+        onExportBoard = { _ , isPdf ->
+            toast(if (isPdf) "墨迹导出 PDF 在 M5 收口" else "墨迹导出图片在 M5 收口")
+        },
+    )
 }
