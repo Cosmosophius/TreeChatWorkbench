@@ -163,3 +163,29 @@ M2 预备知识（给下个会话）：
   目录选择走 javax.swing.JFileChooser（目录唯一模式），其它合约照旧 AWT FileDialog 多选模式。
 - **验证**：共享云盘 UI + 拖拽 + 批量条全量编译过；冒烟与安卓双 flavor 离线编译全绿。
   拖拽跟手幽灵/真实上传需用户真点击（工作台有待接 UI 时与 shelf 一并测）。
+
+### M4 收口 + M5 打包（2026-10-18，阶段完成）
+
+- **词典/墨迹接线**：工作台 Tab 里 `DictionaryScreen`（onAskWord→`createQuestionInSourceTree`+
+  openSubWindow，照抄安卓接线语义）与 `InkWorkbenchScreen`（InkNoteStore 直连管理 boards；
+  「画布快照」「导出 PDF/图片」两个入口留 M5 F 处收口，地址不变）。
+- **ZipExporter 桌面替身**（同 Markdown/talktree 打包口径）：`shareFile` 从 Intent 链
+  换保存对话框（javax.swing JFileChooser，改名自动补 .zip）。
+- **命令面板**：工作台 Ctrl/Cmd+K 动作面板、Ctrl/Cmd+F 检索初始态输入——共享
+  `CommandPaletteDialog`（v1.41.24+），不改一行。
+- **M5 交付**（`release/desktop/`）：
+  - `talktree-macos-arm64-1.41.0-desktop.3.dmg`（内嵌 jlink runtime；实测进程稳定启动，
+    UI 手势循环日志在产）
+  - `talktree-linux-arm64-1.41.0-desktop.3.zip`（jar 集合 + `talktree.sh` 启动脚本 +
+    词库 TSV assets + linux-arm64 skiko 原生库；jpackage 不能在 macOS 交叉打 Linux，故用 zip 方案）
+- **两个实机修复（对移植方极总要）**：
+  1. sqlite schema：SQLite 外键语法是 `ON DELETE SET NULL`（带空格）——写成 `SET_NULL`
+     会让 conversations 表建不出来（首次运行即崩在 FolderDao 上）。
+  2. **Dispatchers.Main 缺失**：kotlinx-coroutines JVM 在本机 FastServiceLoader 枚举不到
+     `META-INF/services/...MainDispatcherFactory`（探针证据：普通 ServiceLoader 能找到、
+     内部 loader 返回空）。修法：main() 最先作反射调
+     `kotlinx.coroutines.swing.SwingDispatcherFactory.createDispatcher(List)` + 公开 API
+     `kotlinx.coroutines.test.Dispatchers.setMain(...)` 注入（先 setMain 再首个 Main 访问）。
+     smoketime 校验 `Dispatchers.Main` 从 [missing] 变正常。
+- **下一批待办**：墨迹快照/导出 batching；BROWSER 独立顶层窗方案落点；用户真机点验清单
+  （会话创建→发消息流式回复→书架拖拽云盘→划选词条→命令面板）。
