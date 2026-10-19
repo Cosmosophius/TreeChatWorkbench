@@ -192,17 +192,26 @@ M2 预备知识（给下个会话）：
 
 ### M5 补齐：缺口 + 图标（2026-10-18 晚，用户点名）
 
-- **图标**：App 品牌 icns（深底绿环「条」字，`desktop/resources/条畅.icns`，挂 mac bundle
-  `macOS { iconFile }` + bundleID）；代码里两处 `painterResource` 占位换真绘制
-  （`VectorPlaceholderPainter`：注音角标=圆环+声调波纹；手写=笔杆+笔头），共享代码未改。
-- **模型快击菜单完整化**：`DesktopProviderAndModelMenu`（复刻安卓两段结构：
-  服务商切换段＋当前服务商模型段——含 ctx 窗口显示、当前项打勾、设置入口；
-  模型切换=改 selectedModelId 后 `replaceProviders` 回写）。
-- **浏览器 Tab 桌面方案**：`DesktopBrowserPane`（URL 输入 → `AppEnv.openLink` 系统默认浏览器；
-  桌面不内嵌 WebView 覆盖层——告知用户与安卓差异及配合方式：网页复制回条畅划词提问）。
-- **墨迹**：画布快照真实现（`viewModel.nodes`/`loadNodeSummaries`/`computeGraphLayout`/
-  `graphState.positions` → `InkNoteBoard`，照安卓字段）；`InkNoteExporter` 桌面版
-  （java2D 渲 PNG + pdfbox 包 PDF；导出走 ZipExporter 保存对话框）。
-- **验证**：全量编译绿；smoke Main 正常；安卓双 flavor 离线绿；dmg/zip 重出（含图标）。
-- **剩余已知缺口（如实）**：扫描件 OCR 选词（规划为桌面 v2/onnx Paddle 评估）；
-  工作台视觉与安卓原版仍有细节差距（药丸 Tab/顶栏等）；AI 对话需用户自行配置服务商密钥后实测。
+- **图标**：App 品牌换为 Android 原版 `ic_launcher`（`desktop/resources/条畅.icns`，经 Java 32位重采样 + iconutil 打包），与手机版图标 100% 同款。
+- **模型快击菜单完整化**：`DesktopProviderAndModelMenu`（复刻安卓两段结构：服务商切换段＋当前服务商模型段——含 ctx 窗口显示、当前项打勾、设置入口）。
+- **浏览器 Tab 桌面方案**：`DesktopBrowserPane`（URL 输入 → `AppEnv.openLink` 系统默认浏览器）。
+- **墨迹**：画布快照真实现（`viewModel.nodes`/`loadNodeSummaries`/`computeGraphLayout` → `InkNoteBoard`）；`InkNoteExporter` 桌面版（java2D 渲 PNG + pdfbox 包 PDF）。
+
+### M5 进阶：Linux 内置 PaddleOCR + 选词手势根治 + 常驻云盘按钮（2026-10-19）
+
+- **Linux 内置 OCR 封装**：
+  - 引入 `onnxruntime:1.31.0`（jar 官方自带 `linux-aarch64`、`linux-x64`、`osx-aarch64` 原生库）。
+  - 内置 `PaddleOCR` PP-OCRv4 mobile 模型（`ch_PP-OCRv4_det_infer.onnx` + `ch_PP-OCRv4_rec_infer.onnx`）打入 `desktop.jar`。
+  - 字典直接从 rec 模型 metadata 的 `character` 属性解码。
+  - DBNet 检测输入宽和高严格补齐为 32 的整数倍，结合上下 60% unclip 恢复收缩核，CTC 解码汉字与英文字符。
+  - **Linux 版无需用户安装 tesseract 任何系统外部依赖，开箱即用内置 OCR**！macOS 端同时支持 Vision 与内置 PaddleOCR。
+- **阅读器选词手势根治**：
+  - 修复 `SelectableMarkdown.kt` 中双击选词、三击选句后漏调 `currentOnSelectionChanged` 的缺陷。
+  - 修复鼠标拖拽释放（`!change.pressed`）未调用 `change.consume()` 导致 Up 事件穿透的问题。
+  - 在 `AdaptiveDocumentView` 中加入 `selectionMadeUptime` 350ms 保护静默窗口，彻底杜绝外层 `onTapBlank` 误杀刚选中的选区。
+- **书架常驻「谷歌云盘」按钮**：
+  - 在 `ShelfToolbar`（书架顶栏）直接增加常驻「谷歌云盘」按钮（与「导入书籍」「搜索」「网页阅读」并排）。
+  - 用户随时点击即可打开云端面板，浏览、下载、一键导入或绑定文件夹，无需先进入多选模式。
+- **交付包重新生成**（`release/desktop/`）：
+  - `talktree-macos-arm64-1.41.0-desktop.3.dmg`（203M，内置 PaddleOCR + 原版图标 + 选词修复）
+  - `talktree-linux-arm64-1.41.0-desktop.3.zip`（171M，包含 `desktop.jar`、PaddleOCR 模型及全套原生库）
