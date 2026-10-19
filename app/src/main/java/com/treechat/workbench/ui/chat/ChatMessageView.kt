@@ -68,6 +68,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.treechat.workbench.ui.motion.PerformanceMode
 import com.treechat.workbench.util.AppStrings
 import com.treechat.workbench.safety.BranchSafetyAuditor
 import androidx.compose.runtime.Composable
@@ -247,6 +248,8 @@ fun NodeChatContent(
     var imageError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    // 对话标签（位置锚点小窗）：与阅读器的 PageTagStore 同源，纯界面层状态
+    val chatTagStore = remember { ChatTagStore(context) }
 
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(ImagePicker.MAX_IMAGES)
@@ -568,140 +571,156 @@ fun NodeChatContent(
                 }
             }
 
-            LazyColumn(
-                state = listState,
+            // ---- 对话标签层：空白处长按 / 鼠标右键放一个标签小窗 ----
+            //
+            // 为什么包在消息列表外、而不是整个对话区：输入框里长按要留给
+            // 光标与粘贴菜单，不能被标签手势吃掉。包列表正好覆盖"内容区"，
+            // 归一化坐标也以内容区为基准，换设备/转屏/浮层小窗都不会漂。
+            ChatTagSurface(
+                hostNodeId = nodeId,
+                store = chatTagStore,
+                // 标签建出的就是当前对话的下级分支（与选词分叉同一条数据路径，
+                // 只是没有 originQuote —— 它不依赖任何文本）
+                onCreateBranch = { title -> viewModel.createChildNode(nodeId, title) },
+                onOpenWindow = onOpenQuoteWindow,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    // ---- 键盘方向键滚动对话 ----
-                    //
-                    // 为什么需要：接了外接键盘（或用了触控板 + 物理键盘）之后，
-                    // 桌面端最顺手的滚动方式就是 ↑/↓/PageUp/PageDn，
-                    // 但对话列表此前只能靠鼠标滚轮 —— 手放在键盘上却滚不动。
-                    //
-                    // 为什么挂在 `onPreviewKeyEvent` 而不是 `onKeyEvent`：
-                    // `onPreviewKeyEvent` 在事件**冒泡到子节点之前**触发，
-                    // 因此输入框聚焦时按 ↑ 会先被这里看到。这里只在
-                    // "焦点不在文本输入框"时才消费，避免打断正常打字。
-                    .onPreviewKeyEvent { ev ->
-                        if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        // 输入框/文本域里按方向键是在移动光标，必须放行。
-                        // KeyEvent 拿不到焦点树，改为判断"本次按键是否会被文本框消费"：
-                        // 交由下方 TextField 自己处理（此处直接返回 false）。
-
-                        val visible = listState.layoutInfo.visibleItemsInfo
-                        if (visible.isEmpty()) return@onPreviewKeyEvent false
-                        val first = visible.first().index
-                        val lastIdx = visible.last().index
-                        val step = if (ev.isShiftPressed) 5 else 1   // Shift+方向 = 翻页
-
-                        when (ev.key) {
-                            Key.DirectionUp -> {
-                                if (first <= 0) return@onPreviewKeyEvent false
-                                val target = (first - step).coerceAtLeast(0)
-                                scope.launch { listState.animateScrollToItem(target) }
-                                true
-                            }
-                            Key.DirectionDown -> {
-                                if (lastIdx >= messages.size - 1) return@onPreviewKeyEvent false
-                                val target = (lastIdx + step).coerceAtMost(messages.size - 1)
-                                scope.launch { listState.animateScrollToItem(target) }
-                                true
-                            }
-                            Key.PageUp -> {
-                                val target = (first - step * 3).coerceAtLeast(0)
-                                scope.launch { listState.animateScrollToItem(target) }
-                                true
-                            }
-                            Key.PageDown -> {
-                                val target = (lastIdx + step * 3).coerceAtMost(messages.size - 1)
-                                scope.launch { listState.animateScrollToItem(target) }
-                                true
-                            }
-                            else -> false
-                        }
-                    }
-                    // 列表必须能拿到焦点，否则键盘事件根本不会路由到这里
-                    .focusRequester(listFocusRequester)
-                    .focusable(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                itemsIndexed(messages, key = { _, item -> item.id }) { index, message ->
-                    Box(modifier = Modifier.staggeredAppear(index)) {
-                        // key 包一层：流式更新会重建整个 item，
-                        // 用 key 保住每个 item 自己的 remember 状态（如 copied 标记）
-                        key(message.id) {
-                            // 每条消息一个控制器（按消息 id 缓存，跨重组保留）
-                            val messageController = remember(message.id) {
-                                selectionControllers.getOrPut(message.id) {
-                                    MessageSelectionController()
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // ---- 键盘方向键滚动对话 ----
+                        //
+                        // 为什么需要：接了外接键盘（或用了触控板 + 物理键盘）之后，
+                        // 桌面端最顺手的滚动方式就是 ↑/↓/PageUp/PageDn，
+                        // 但对话列表此前只能靠鼠标滚轮 —— 手放在键盘上却滚不动。
+                        //
+                        // 为什么挂在 `onPreviewKeyEvent` 而不是 `onKeyEvent`：
+                        // `onPreviewKeyEvent` 在事件**冒泡到子节点之前**触发，
+                        // 因此输入框聚焦时按 ↑ 会先被这里看到。这里只在
+                        // "焦点不在文本输入框"时才消费，避免打断正常打字。
+                        .onPreviewKeyEvent { ev ->
+                            if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            // 输入框/文本域里按方向键是在移动光标，必须放行。
+                            // KeyEvent 拿不到焦点树，改为判断"本次按键是否会被文本框消费"：
+                            // 交由下方 TextField 自己处理（此处直接返回 false）。
+
+                            val visible = listState.layoutInfo.visibleItemsInfo
+                            if (visible.isEmpty()) return@onPreviewKeyEvent false
+                            val first = visible.first().index
+                            val lastIdx = visible.last().index
+                            val step = if (ev.isShiftPressed) 5 else 1   // Shift+方向 = 翻页
+
+                            when (ev.key) {
+                                Key.DirectionUp -> {
+                                    if (first <= 0) return@onPreviewKeyEvent false
+                                    val target = (first - step).coerceAtLeast(0)
+                                    scope.launch { listState.animateScrollToItem(target) }
+                                    true
                                 }
+                                Key.DirectionDown -> {
+                                    if (lastIdx >= messages.size - 1) return@onPreviewKeyEvent false
+                                    val target = (lastIdx + step).coerceAtMost(messages.size - 1)
+                                    scope.launch { listState.animateScrollToItem(target) }
+                                    true
+                                }
+                                Key.PageUp -> {
+                                    val target = (first - step * 3).coerceAtLeast(0)
+                                    scope.launch { listState.animateScrollToItem(target) }
+                                    true
+                                }
+                                Key.PageDown -> {
+                                    val target = (lastIdx + step * 3).coerceAtMost(messages.size - 1)
+                                    scope.launch { listState.animateScrollToItem(target) }
+                                    true
+                                }
+                                else -> false
                             }
-                            MessageRow(
-                                message = message,
-                                isStreaming = isStreaming,
-                                isSelectionHost = activeSelectionMessageId == message.id,
-                                controller = messageController,
-                                interaction = MessageInteraction(
-                                    highlights = highlights,
-                                    // 粗体呈现：来自设置，读一次快照传给每条消息
-                                    boldColorStyle = viewModel.settings.boldColorStyle,
-                                    boldHighlightColor = viewModel.settings.boldHighlightColor,
-                                    boldFontStyle = viewModel.settings.boldFontStyle,
-                                    onToggleHighlights = { messageId, ranges ->
-                                        viewModel.toggleHighlights(messageId, nodeId, ranges)
-                                    },
-                                    onAskAboutSelection = { _, quote -> onForkBranch(quote) },
-                                    onEtymology = { word -> activeEtymologyWord = word }
-                                ),
-                                onSelectionChanged = { hasSelection, quote, highlightActive ->
-                                    if (hasSelection) {
-                                        // 强制清除其他所有消息控制器的残留选区，彻底消除跨消息选区竞争导致的死锁
-                                        selectionControllers.forEach { (otherId, otherCtrl) ->
-                                            if (otherId != message.id) {
-                                                otherCtrl.clear()
-                                            }
-                                        }
-                                        activeSelectionMessageId = message.id
-                                        activeSelectionController = messageController
-                                        selectionQuote = quote
-                                        selectionHighlightActive = highlightActive
-                                    } else if (activeSelectionMessageId == message.id) {
-                                        activeSelectionMessageId = null
-                                        activeSelectionController = null
-                                        selectionQuote = ""
+                        }
+                        // 列表必须能拿到焦点，否则键盘事件根本不会路由到这里
+                        .focusRequester(listFocusRequester)
+                        .focusable(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    itemsIndexed(messages, key = { _, item -> item.id }) { index, message ->
+                        Box(modifier = Modifier.staggeredAppear(index)) {
+                            // key 包一层：流式更新会重建整个 item，
+                            // 用 key 保住每个 item 自己的 remember 状态（如 copied 标记）
+                            key(message.id) {
+                                // 每条消息一个控制器（按消息 id 缓存，跨重组保留）
+                                val messageController = remember(message.id) {
+                                    selectionControllers.getOrPut(message.id) {
+                                        MessageSelectionController()
                                     }
-                                },
-                                onRegenerate = if (message.role == "assistant" && !isStreaming) {
-                                    { viewModel.regenerateLast(nodeId) }
-                                } else {
-                                    null
-                                },
-                                onForkWhole = { onForkBranch(message.content) },
-                                // 把选字手势的判定结果汇总到本页顶部显示，
-                                // 供"长按没反应"的定位（见 settings.selectionDiagnostics）
-                                onGestureDiagnostic = { selectionDiagnostic = it },
-                                quoteLinkTargets = quoteTargets,
-                                onQuoteClick = onOpenQuoteWindow,
-                                // 文本选择方案：由设置决定（默认长按选句 = 原行为）
-                                selectionScheme = viewModel.settings.selectionScheme,
-                                // 输入设备模式：自动检测鼠标 / 强制键鼠 / 强制触控
-                                inputMode = viewModel.settings.inputMode,
-                                onUndoHighlight = { viewModel.undoLatestHighlight(message.id) },
-                                // 视觉系带：被激活的小窗来源消息短暂高亮
-                                flashHighlight = message.id == flashMessageId,
-                                // 检索命中词：非空时在这条消息正文里把它标出来。
-                                // 只给真正命中的那一条，避免每条消息都去扫全文。
-                                searchHitKeyword = if (message.id == searchHitMessageId) {
-                                    jumpToKeyword
-                                } else {
-                                    null
-                                },
-                                liveStreamingTexts = streamingTexts,
-                                liveStreamingReasonings = streamingReasonings,
-                                onDelete = { messageToDelete = message }
-                            )
+                                }
+                                MessageRow(
+                                    message = message,
+                                    isStreaming = isStreaming,
+                                    isSelectionHost = activeSelectionMessageId == message.id,
+                                    controller = messageController,
+                                    interaction = MessageInteraction(
+                                        highlights = highlights,
+                                        // 粗体呈现：来自设置，读一次快照传给每条消息
+                                        boldColorStyle = viewModel.settings.boldColorStyle,
+                                        boldHighlightColor = viewModel.settings.boldHighlightColor,
+                                        boldFontStyle = viewModel.settings.boldFontStyle,
+                                        onToggleHighlights = { messageId, ranges ->
+                                            viewModel.toggleHighlights(messageId, nodeId, ranges)
+                                        },
+                                        onAskAboutSelection = { _, quote -> onForkBranch(quote) },
+                                        onEtymology = { word -> activeEtymologyWord = word }
+                                    ),
+                                    onSelectionChanged = { hasSelection, quote, highlightActive ->
+                                        if (hasSelection) {
+                                            // 强制清除其他所有消息控制器的残留选区，彻底消除跨消息选区竞争导致的死锁
+                                            selectionControllers.forEach { (otherId, otherCtrl) ->
+                                                if (otherId != message.id) {
+                                                    otherCtrl.clear()
+                                                }
+                                            }
+                                            activeSelectionMessageId = message.id
+                                            activeSelectionController = messageController
+                                            selectionQuote = quote
+                                            selectionHighlightActive = highlightActive
+                                        } else if (activeSelectionMessageId == message.id) {
+                                            activeSelectionMessageId = null
+                                            activeSelectionController = null
+                                            selectionQuote = ""
+                                        }
+                                    },
+                                    onRegenerate = if (message.role == "assistant" && !isStreaming) {
+                                        { viewModel.regenerateLast(nodeId) }
+                                    } else {
+                                        null
+                                    },
+                                    onForkWhole = { onForkBranch(message.content) },
+                                    // 把选字手势的判定结果汇总到本页顶部显示，
+                                    // 供"长按没反应"的定位（见 settings.selectionDiagnostics）
+                                    onGestureDiagnostic = { selectionDiagnostic = it },
+                                    quoteLinkTargets = quoteTargets,
+                                    onQuoteClick = onOpenQuoteWindow,
+                                    // 文本选择方案：由设置决定（默认长按选句 = 原行为）
+                                    selectionScheme = viewModel.settings.selectionScheme,
+                                    // 输入设备模式：自动检测鼠标 / 强制键鼠 / 强制触控
+                                    inputMode = viewModel.settings.inputMode,
+                                    onUndoHighlight = { viewModel.undoLatestHighlight(message.id) },
+                                    // 视觉系带：被激活的小窗来源消息短暂高亮
+                                    flashHighlight = message.id == flashMessageId,
+                                    // 检索命中词：非空时在这条消息正文里把它标出来。
+                                    // 只给真正命中的那一条，避免每条消息都去扫全文。
+                                    searchHitKeyword = if (message.id == searchHitMessageId) {
+                                        jumpToKeyword
+                                    } else {
+                                        null
+                                    },
+                                    liveStreamingTexts = streamingTexts,
+                                    liveStreamingReasonings = streamingReasonings,
+                                    onDelete = { messageToDelete = message }
+                                )
+                            }
                         }
                     }
                 }
@@ -1561,21 +1580,30 @@ private fun SearchSourcesCard(sources: List<SearchResult>) {
 @Composable
 private fun ThreeDotLoader() {
     val scheme = MaterialTheme.colorScheme
-    val transition = rememberInfiniteTransition(label = "dots")
+    val transition = if (PerformanceMode.allowAmbientAnimation) {
+        rememberInfiniteTransition(label = "dots")
+    } else {
+        null
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         repeat(3) { index ->
-            val alpha by transition.animateFloat(
-                initialValue = 0.22f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 620, delayMillis = index * 140),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "dotAlpha$index"
-            )
+            val alpha = if (transition != null) {
+                val animated by transition.animateFloat(
+                    initialValue = 0.22f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 620, delayMillis = index * 140),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "dotAlpha$index"
+                )
+                animated
+            } else {
+                0.75f
+            }
             Box(
                 modifier = Modifier
                     .size(6.dp)
