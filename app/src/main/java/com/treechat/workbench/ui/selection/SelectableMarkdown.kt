@@ -807,12 +807,14 @@ fun SelectableMarkdownText(
                                     clickCount.intValue >= 3 && multiHit != null -> {
                                         // 三击：选中整句（浏览器是选整段，这里按本项目的"句"粒度）
                                         controller.selectSentenceAt(multiHit)
+                                        currentOnSelectionChanged(controller.hasSelection)
                                         diagnose("桌面级三击：选中整句")
                                         continue
                                     }
                                     clickCount.intValue == 2 && multiHit != null -> {
                                         // 双击：选中光标下的词，不进入拖动（与浏览器一致）
                                         controller.selectWordAt(multiHit)
+                                        currentOnSelectionChanged(controller.hasSelection)
                                         diagnose("桌面级双击：选中一个词")
                                         continue
                                     }
@@ -884,7 +886,10 @@ fun SelectableMarkdownText(
                                 val change = event.changes
                                     .firstOrNull { it.id == down.id } ?: break
                                 releasePos = change.position
-                                if (!change.pressed) break
+                                if (!change.pressed) {
+                                    if (dragging) change.consume()
+                                    break
+                                }
 
                                 if (!dragging) {
                                     val moved = change.position - downPos
@@ -986,6 +991,7 @@ fun SelectableMarkdownText(
                                     continue
                                 }
                                 controller.endRangeSelection()
+                                currentOnSelectionChanged(controller.hasSelection)
                                 // 拖选结束：**保留**选区
                                 //（桌面惯例：松手后选区还在，可以直接复制）
                                 diagnose(

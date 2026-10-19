@@ -181,6 +181,8 @@ fun AdaptiveDocumentView(
 
 
     var selectedText by remember { mutableStateOf("") }
+    // 保护窗：刚选出选区时（350ms 内）绝对禁止被外层 tap 吃掉
+    var selectionMadeUptime by remember { mutableStateOf(0L) }
     // 选中文本变化 → 上报（含清空）：右侧边栏的「AI」快捷动作与「词条」都跟着它走
     LaunchedEffect(selectedText) { onSelectionText(selectedText) }
     // 选中词所在的**整句/整段**：翻译与句法都只针对"这一段"，而不是一个孤零零的词。
@@ -866,14 +868,20 @@ fun AdaptiveDocumentView(
                                         selectedSentence = sentence
                                         selectedPageIndex = pIdx - 1
                                         toolbarOffset = pos
+                                        if (word.isNotBlank()) {
+                                            selectionMadeUptime = SystemClock.uptimeMillis()
+                                        }
                                     },
                                     onTapBlank = { pos ->
-                                        // 点正文：**先取消选中**、再清标注，都没了才轮到
-                                        // 左右分区翻页；中间区要连点两下才切沉浸。
-                                        dispatchBodyTap(
-                                            bodyTapFraction(col, pos.x + cardPaddingPx),
-                                            clearFirst = { consumeTapClear() }
-                                        )
+                                        // 保护窗：刚选出来的选区（350ms 内），绝对禁止被外层 tap 吃掉
+                                        if (SystemClock.uptimeMillis() - selectionMadeUptime >= 350L) {
+                                            // 点正文：**先取消选中**、再清标注，都没了才轮到
+                                            // 左右分区翻页；中间区要连点两下才切沉浸。
+                                            dispatchBodyTap(
+                                                bodyTapFraction(col, pos.x + cardPaddingPx),
+                                                clearFirst = { consumeTapClear() }
+                                            )
+                                        }
                                     },
                                     currentSelectedWord = if (selectedPageIndex == pIdx - 1) selectedText else "",
                                     modifier = Modifier

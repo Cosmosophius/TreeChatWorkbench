@@ -116,6 +116,11 @@ fun DesktopWorkbenchApp(
     val windowManager = remember { FloatingWindowManager() }
     val stateHolder = rememberSaveableStateHolder()
 
+    // --seed-demo 时直接打开演示会话
+    LaunchedEffect(Unit) {
+        DesktopDemoState.latestConvId?.let { viewModel.openConversation(it) }
+    }
+
     // 文件/目录选择总线 → AWT FileDialog（SAF 桌面等价物）
     DisposableEffect(Unit) {
         val hook: (Long, ActivityResultContract<*, *>, Any?) -> Unit = { id, contract, _ ->

@@ -125,6 +125,8 @@ dependencies {
     implementation("org.apache.pdfbox:pdfbox:2.0.27")
     // M3 数据库（M3 里程碑接 UI）
     implementation("org.xerial:sqlite-jdbc:3.46.1.3")
+    // 内置 OCR：PP-OCRv4 ONNX（jar 自带全平台原生库）
+    implementation("com.microsoft.onnxruntime:onnxruntime:1.31.0")
     // M3 色板算法：从安卓 material 库 AAR 里抽出的 color/utilities 字节码（Hct/TonalPalette/Cam16…）
     implementation(files("libs/material-color-utilities-1.12.0-classes.jar"))
 }
@@ -142,6 +144,9 @@ compose.desktop {
                 iconFile.set(rootProject.file("desktop/resources/条畅.icns"))
                 bundleID = "com.treechat.workbench.desktop"
             }
+            // 扫描件 OCR：mac 的 ttocr（Vision CLI）以资源形式打进主 jar（运行时提取到 tmp 执行）；
+            // linux 走系统 tesseract。源码在 desktop/app-resources/ttocr.m。
+            sourceSets.getByName("main").resources.srcDir(rootProject.file("desktop/app-resources"))
         }
     }
 }
@@ -193,6 +198,7 @@ val linuxDistDir = layout.buildDirectory.dir("linux-arm64-dist")
 val collectLinuxRuntimeJars = tasks.register<Copy>("collectLinuxRuntimeJars") {
     dependsOn(tasks.named("jar"), downloadSkikoLinuxArm64)
     from(configurations.getByName("runtimeClasspath"))
+    from(tasks.named("jar"))
     from(downloadSkikoLinuxArm64.map { it.outputs })
     into(linuxDistDir.map { it.dir("lib") })
 }

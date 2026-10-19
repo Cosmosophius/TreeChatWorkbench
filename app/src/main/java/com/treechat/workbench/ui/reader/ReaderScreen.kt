@@ -1545,11 +1545,15 @@ private fun ShelfContent(
             return@Column
         }
 
+        // 云端面板与登录状态（在 ShelfToolbar 之前声明，供常驻云盘按钮使用）
+        var drivePanelOpen by remember { mutableStateOf(false) }
+
         ShelfToolbar(
             busy = busy,
             onImport = onImport,
             onOpenBrowser = onOpenBrowser,
             onOpenSearch = onOpenSearch,
+            onOpenCloud = { drivePanelOpen = true },
             globalEnabled = globalEnabled,
             onGlobalEnabledChange = onGlobalEnabledChange,
             showRetrievalTest = showRetrievalTest,
@@ -1679,8 +1683,6 @@ private fun ShelfContent(
         var draggedEntry by remember { mutableStateOf<ShelfEntry?>(null) }
         // 拖拽起手点（root 像素）：书本体跟手的位移基准
         var dragStartPos by remember { mutableStateOf<Offset?>(null) }
-        // 云端面板与登录
-        var drivePanelOpen by remember { mutableStateOf(false) }
 
         fun selectedEntries(): List<ShelfEntry> =
             entries.filter { selectedDocIds.containsKey(it.document.id) }
@@ -2254,6 +2256,8 @@ private fun ShelfToolbar(
     onOpenBrowser: () -> Unit,
     /** 打开命令与检索面板（搜会话、书籍、分支标题与消息内容）。 */
     onOpenSearch: () -> Unit = {},
+    /** 打开谷歌云盘面板（查看、下载、导入、同步文件夹）。 */
+    onOpenCloud: () -> Unit = {},
     /** 打开扫描工作台：拍照 / 相册导入 / 断点续拍 / 合成 PDF。 */
     globalEnabled: Boolean,
     onGlobalEnabledChange: (Boolean) -> Unit,
@@ -2334,6 +2338,26 @@ private fun ShelfToolbar(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("网页阅读", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
+
+            // 谷歌云盘：直接打开云端文件面板（浏览/导入/绑定文件夹），不再需要先进入多选模式
+            OutlinedButton(
+                onClick = onOpenCloud,
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, DividerDark),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = PanelSurface,
+                    contentColor = TextPrimary
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.CloudUpload,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = AccentCyan
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("谷歌云盘", fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
 
             OutlinedButton(
