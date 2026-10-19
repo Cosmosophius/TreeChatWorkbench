@@ -308,3 +308,56 @@ toolState/...）曾整批错插进 **LiveTextPageCard** 的调用——两处调
 `ShelfBatchBar` 新增 `onUploadCloud`；`ShelfBookCard` 新增 `driveBounds`/`onDropToDrive`。
 
 待办不变：文件夹 tab 的对话树 .talktree 序列化（下一轮）、REDESIGN.md 的 P6。
+
+---
+
+## 安卓线增量三：对话界面标签小窗（2026-10-19）
+
+### 1. 它解决什么
+对话界面此前开下级分支只有一条路：**先选中文字 → 由引用文本反查同文本超链接**。
+两个绕不过的限制：必须有可选中的文本（图片消息、表格、空白提问都开不了）；
+分支身份由引用文本决定（两段话文字相同就指向同一分支，原文一改链接就断）。
+
+标签小窗改为**锚在屏幕位置 + 用户自起的名字**，完全不依赖文本。
+桌面端要做的正是这套逻辑的移植——桌面反而是它最舒服的环境（右键是原生手势）。
+
+### 2. 两个新文件（都在 `ui/chat/`，纯 Compose + SharedPreferences）
+- **`ChatTagStore.kt`** — 存储层，接口就 6 个方法：
+  `load(hostNodeId)` / `add(host, name, x, y)` / `attachNode(tagId, nodeId)` /
+  `rename(tagId, name)` / `remove(tagId)`。
+  坐标是**归一化 0..1**（不是像素）：同一份对话会在手机、平板横屏、浮层小窗
+  三种尺寸下显示，存像素换设备/转屏就会漂。桌面窗口还能自由拉伸，这条尤其重要。
+  `nodeId` 字段是"这个标签已建出的分支节点 id"，首次点开才创建并回填——
+  避免每点一次就往树里多插一个空分支。
+- **`ChatTagLayer.kt`** — `ChatTagSurface(hostNodeId, store, onCreateBranch, onOpenWindow, modifier, content)`，
+  包住内容区，做三件事：手势、图钉绘制、命名框。
+
+### 3. 三个必须照抄的判据（错了会打架）
+- **空白处才算**：以 `down.isConsumed` 分流——被消费 = 按在可选文本上 → 让位给
+  `SelectableMarkdownText`；未消费 = 空白 → 才进入长按计时。与阅读器里
+  "起点有没有可选文本"是同一套判据。
+- **长按计时用 `PointerEventPass.Final`**：Main pass 会被内层选词层和外层滚动容器
+  先看到；Final pass 才能拿到"别人处理完之后"的真实状态。这是书架拖拽那次
+  踩出来的同一个坑。
+- **右键取 `currentEvent.buttons`，不是 `down.buttons`**：Compose 1.6.8 的
+  `PointerInputChange` **没有** `buttons` 成员（按钮状态在 `PointerEvent` 上）。
+  桌面端 Compose 版本可能更高，但这条判据照抄不会错。
+
+### 4. 接入点（`ChatMessageView.kt` 的 `NodeChatContent`）
+`ChatTagSurface` 只包 `LazyColumn`，**不包输入框**——输入框里长按要留给光标与
+粘贴菜单。归一化坐标因此以"消息内容区"为基准。
+`onCreateBranch = { title -> viewModel.createChildNode(nodeId, title) }`
+（与选词分叉走同一条数据路径，只是没有 `originQuote`）；
+`onOpenWindow = onOpenQuoteWindow`（复用同文本超链接那条开窗链路，含置顶复用逻辑）。
+
+### 5. 桌面端移植清单
+1. `ChatTagStore` 直接复用（SharedPreferences 是 Android API → 换成桌面偏好存储，
+   或直接落 JSON 文件；接口 6 个方法不变）。
+2. `ChatTagSurface` 逻辑原样搬；`currentEvent.buttons.isSecondaryPressed` 在
+   Compose Desktop 上同样可用，右键会比触屏长按更顺。
+3. 归一化坐标在桌面窗口拉伸下自动正确——这是选 0..1 而非像素的直接收益。
+4. **不要**给标签加 `originQuote`：它的价值恰恰是"没有文本也能锚定"。
+
+### 6. 本轮交付
+1.41.29 / versionCode 81，提交 `f2122ce`。已知限制：图钉长按移除是唯一删除入口
+（没有右键菜单），桌面端可加右键菜单做得更顺手。
