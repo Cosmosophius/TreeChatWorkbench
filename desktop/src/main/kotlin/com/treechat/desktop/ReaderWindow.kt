@@ -35,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -94,6 +95,18 @@ fun DesktopReaderHost(
 
     val activeDocument = pool.documents.firstOrNull { it.id == activeDocumentId }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 同文本超链接：观察所有带引用的分支
+    val quotedNodes by remember {
+        com.treechat.workbench.data.db.AppDatabase.getInstance(context)
+            .conversationDao().observeQuotedNodes()
+    }.collectAsState(initial = emptyList())
+    val quoteLinkTargets = remember(quotedNodes) {
+        com.treechat.workbench.ui.selection.QuoteLinkMatcher.extractTargets(
+            nodes = quotedNodes,
+            currentNodeId = null
+        )
+    }
 
     LaunchedEffect(toast) {
         toast?.let {
@@ -246,6 +259,7 @@ fun DesktopReaderHost(
                                     toast = "笔记暂复制到剪贴板（M3 接注释板）"
                                 },
                                 onOpenEtymology = { word -> if (word.isNotBlank()) focusedWord = word },
+                                quoteLinkTargets = quoteLinkTargets,
                                 selectionScheme = if (settings.selectionScheme == SelectionScheme.TOUCH_LONG_PRESS) {
                                     SelectionScheme.MOUSE_DESKTOP
                                 } else {

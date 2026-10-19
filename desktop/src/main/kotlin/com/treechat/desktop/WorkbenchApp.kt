@@ -202,6 +202,8 @@ private fun DesktopFloatingWindow(
     viewModel: ChatNodeViewModel,
     settings: AppSettings,
 ) {
+    val scope = rememberCoroutineScope()
+
     Window(
         onCloseRequest = { manager.closeWindow(item.id) },
         title = item.title.ifBlank { "条畅小窗" },
@@ -226,8 +228,23 @@ private fun DesktopFloatingWindow(
                         nodeId = item.nodeId,
                         viewModel = viewModel,
                         onForkBranch = { quote ->
-                            // 桌面 v1：分叉窗同样走 openSubWindow 独立顶层窗；
-                            // 子节点由窗内用户显式输入驱动（M4 与安卓的 forkChildNode 语义完全对齐）。
+                            // 从小窗继续分叉：创建子分支节点并记录引文，超链接与思维树方能识别
+                            scope.launch {
+                                val originMessageId = viewModel.latestMessageIdOfNode(item.nodeId)
+                                val child = viewModel.forkChildNode(
+                                    parentNodeId = item.nodeId,
+                                    selectedQuote = quote,
+                                    sourceMessageId = originMessageId,
+                                )
+                                manager.openSubWindow(
+                                    nodeId = child.id,
+                                    title = child.title,
+                                    originQuote = quote,
+                                    sourceMessageId = originMessageId,
+                                    depth = item.depth + 1,
+                                    spawnFromPx = item.offset,
+                                )
+                            }
                         },
                         onOpenQuoteWindow = { node ->
                             val existing = manager.windows.firstOrNull { it.nodeId == node.id }
@@ -238,6 +255,7 @@ private fun DesktopFloatingWindow(
                                     nodeId = node.id,
                                     title = node.title,
                                     originQuote = node.originQuote,
+                                    sourceMessageId = node.sourceMessageId,
                                     depth = item.depth + 1,
                                     spawnFromPx = item.offset,
                                 )
@@ -361,12 +379,21 @@ private fun DesktopMainScreen(
                                 nodeId = rootNodeId!!,
                                 viewModel = viewModel,
                                 onForkBranch = { quote ->
-                                    windowManager.openSubWindow(
-                                        nodeId = rootNodeId!!,
-                                        title = quote.take(24),
-                                        originQuote = quote,
-                                        depth = 1,
-                                    )
+                                    scope.launch {
+                                        val originMessageId = viewModel.latestMessageIdOfNode(rootNodeId!!)
+                                        val child = viewModel.forkChildNode(
+                                            parentNodeId = rootNodeId!!,
+                                            selectedQuote = quote,
+                                            sourceMessageId = originMessageId,
+                                        )
+                                        windowManager.openSubWindow(
+                                            nodeId = child.id,
+                                            title = child.title,
+                                            originQuote = quote,
+                                            sourceMessageId = originMessageId,
+                                            depth = 1,
+                                        )
+                                    }
                                 },
                                 onOpenQuoteWindow = { node -> openQuoteWindow(windowManager, node, 1) },
                             )
@@ -546,6 +573,7 @@ private fun openQuoteWindow(manager: FloatingWindowManager, node: ConversationNo
             nodeId = node.id,
             title = node.title,
             originQuote = node.originQuote,
+            sourceMessageId = node.sourceMessageId,
             depth = depth,
         )
     }
