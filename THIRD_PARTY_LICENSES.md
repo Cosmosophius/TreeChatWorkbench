@@ -113,3 +113,16 @@ This document records the third-party open-source datasets, models, code librari
 ## 5. Summary and Disclaimer
 
 All third-party trademarks, service marks, trade names, and copyrights are the property of their respective owners. The inclusion of these third-party works does not imply endorsement by the original authors.
+
+---
+
+## 5. Cultural Heritage, Nomenclature & Original Design / 文化出处、命名渊源与原创设计
+
+### 5.1 素扉仿古宣纸卡片与题签设计 (SuFei Ancient Xuan Paper Card & Seal Design)
+- **Design Component**: `app/src/main/java/com/treechat/workbench/ui/settings/SettingsDialog.kt` (`SuFeiClassicsCard`, `TreeChatSealCard`)
+- **Cultural Source / 命名与文化出处**: 
+  - 《诗经·大雅·旱麓》：“瞻彼旱麓，榛楛济济。岂弟君子，干禄岂弟。瑟彼玉瓒，黄流在中。岂弟君子，福禄攸降。鸢飞戾天，鱼跃于渊。岂弟君子，遐不作人。清酒既载，骍牡既备。以享以祀，以介景福。瑟彼柞棫，民所燎矣。岂弟君子，神所劳矣。莫莫葛藟，施于条枚。岂弟君子，求福不回。”
+  - 本项目命名**「条畅」**（TalkTree）即取意于“榛楛济济，条枚畅畅”，寓意枝条舒畅通达、本固枝荣、思绪生发如林木葱郁。
+- **Visual Design Identity / 视觉设计与版权说明**:
+  - 素扉风格采用仿古籍书扉版式、温润熟宣纸色（`#F6F3EB`）、玄墨底色（`#1B201F`）、金石衬线题签与朱砂印泥（`#B33928`「大雅」朱印）设计语言。
+  - 本设计与题签代码为条畅项目原创文化界面组件，供开源社区在遵循本项目整体许可前提下研读、研习与使用。
